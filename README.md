@@ -4,7 +4,7 @@ A browser app for making line art on a dot grid.
 
 ## Examples
 
-Artwork created entirely in Lines on Grids. The transparent exports adapt cleanly to the page around them.
+Artwork created with Lines on Grids
 
 <p align="center">
   <img src="Examples/lines-on-grid-2026-07-16T00-46-36-214Z.png" width="48%" alt="Colorful symmetrical maze artwork made with Lines on Grids">
