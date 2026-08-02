@@ -56,6 +56,27 @@ describe('getFloodFillRegion', () => {
     expect(edgePixels).toHaveLength(8)
     expect(edgePixels.every((pixelIndex) => imageData.data[pixelIndex + 3] === 128)).toBe(true)
   })
+
+  it('covers a multi-pixel antialias band at curved stroke intersections', () => {
+    const pixels: number[] = []
+    for (let y = 0; y < 7; y += 1) {
+      for (let x = 0; x < 7; x += 1) {
+        const distance = Math.max(Math.abs(x - 3), Math.abs(y - 3))
+        const alpha = distance === 0 ? 0 : distance === 1 ? 64 : distance === 2 ? 160 : 255
+        pixels.push(0, 0, 0, alpha)
+      }
+    }
+    const imageData = createImageData(7, 7, pixels)
+    const region = getFloodFillRegion(imageData, 3, 3)
+    const edgePixels = getAdjacentAntialiasedPixelIndexes(imageData, region?.pixelIndexes ?? new Int32Array())
+
+    expect(region?.pixelIndexes.length).toBe(1)
+    expect(edgePixels).toHaveLength(24)
+    expect(edgePixels.every((pixelIndex) => {
+      const alpha = imageData.data[pixelIndex + 3]
+      return alpha === 64 || alpha === 160
+    })).toBe(true)
+  })
 })
 
 describe('dither patterns', () => {
