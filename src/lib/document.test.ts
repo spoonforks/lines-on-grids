@@ -2,12 +2,14 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_BACKGROUND_COLOR,
   addFill,
+  addFillWithMirrors,
   addLayer,
   appendPastedContent,
   commitStroke,
   commitStrokeWithMirrors,
   createDocument,
   exportDocumentPayload,
+  parseDocumentJson,
   removeStroke,
   removeLayer,
   setActiveLayer,
@@ -68,6 +70,27 @@ describe('document utilities', () => {
       { x: 1, y: -2 },
       { x: -1, y: -2 },
     ])
+  })
+
+  it('adds mirrored fills together and deduplicates seeds on a mirror axis', () => {
+    const initial = createDocument(28, { width: 640, height: 480 })
+    const fourWay = addFillWithMirrors(initial, {
+      color: '#3157d5',
+      seed: { x: 42, y: 84 },
+    }, true, true)
+
+    expect(fourWay.fills.map((fill) => fill.seed)).toEqual([
+      { x: 42, y: 84 },
+      { x: -42, y: 84 },
+      { x: 42, y: -84 },
+      { x: -42, y: -84 },
+    ])
+
+    const onAxis = addFillWithMirrors(initial, {
+      color: '#3157d5',
+      seed: { x: 0, y: 84 },
+    }, true, true)
+    expect(onAxis.fills).toHaveLength(2)
   })
 
   it('updates the document background color', () => {
@@ -144,6 +167,24 @@ describe('document utilities', () => {
         seed: { x: 40, y: 60 },
       },
     ])
+  })
+
+  it('imports validated document JSON and recovery snapshots', () => {
+    const initial = addFill(createDocument(30, { width: 800, height: 600 }, '#fefefe'), {
+      color: '#fedcba',
+      seed: { x: 40, y: 60 },
+    })
+
+    expect(parseDocumentJson(serializeDocument(initial))).toEqual(initial)
+    expect(parseDocumentJson(JSON.stringify({ savedAt: Date.now(), document: initial }))).toEqual(initial)
+  })
+
+  it('rejects malformed imported documents', () => {
+    expect(() => parseDocumentJson('{"version":4}')).toThrow(/supported/i)
+    expect(() => parseDocumentJson(JSON.stringify({
+      ...createDocument(28, { width: 640, height: 480 }),
+      strokes: [{ id: 'bad', layerId: 'missing', points: [{ x: 0, y: 0 }, { x: 1, y: 1 }], style: { color: '#111111', lineWidth: 4 } }],
+    }))).toThrow(/invalid layer/i)
   })
 
   it('manages active, locked, hidden, and removable layers', () => {

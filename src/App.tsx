@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import './App.css'
 import { ColorWheel } from './components/ColorWheel'
+import { ExportDialog } from './components/ExportDialog'
 import { NewDrawingDialog } from './components/NewDrawingDialog'
+import { SettingsDialog } from './components/SettingsDialog'
 import { normalizeHexColor } from './lib/color'
 import {
   DEFAULT_BACKGROUND_COLOR,
   addFill,
+  addFillWithMirrors,
   addLayer,
   clearActiveLayer,
   commitStrokeWithMirrors,
@@ -14,13 +17,21 @@ import {
   duplicateLayer,
   exportDocumentPayload,
   moveLayer,
+  parseDocumentJson,
   removeLayer,
   setActiveLayer,
   setBackgroundColor,
   syncDocumentCanvas,
   updateLayer,
 } from './lib/document'
-import { downloadDocumentJson, downloadDrawingPng, getTimestampedFilename } from './lib/export'
+import {
+  downloadDocumentJson,
+  downloadDrawingPng,
+  downloadDrawingSvg,
+  getArtworkGridBounds,
+  getTimestampedFilename,
+} from './lib/export'
+import type { GridExportBounds } from './lib/export'
 import {
   appendSegmentPoints,
   getGridMetrics,
@@ -31,6 +42,7 @@ import {
 import { createHistory, pushHistory, redoHistory, undoHistory } from './lib/history'
 import { loadRecoverySnapshot, saveRecoverySnapshot } from './lib/persistence'
 import type { RecoverySnapshot } from './lib/persistence'
+import { loadPreferences, savePreferences } from './lib/preferences'
 import { createShapePoints, MAX_SHAPE_SIZE, MIN_SHAPE_SIZE, normalizeShapeSize, SHAPE_SIZE_STEP } from './lib/shapes'
 import {
   configureCanvas,
@@ -112,7 +124,13 @@ function App() {
     hoverPoint: null,
     hoveredStrokeId: null,
   })
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [isDialogOpen, setIsDialogOpen] = useState(true)
+  const [isStartupDialog, setIsStartupDialog] = useState(true)
+  const [importError, setImportError] = useState<string | null>(null)
+  const [isExportOpen, setIsExportOpen] = useState(false)
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+  const [preferences, setPreferences] = useState(loadPreferences)
+  const [hasRecovery, setHasRecovery] = useState(initialSavedAtRef.current > 0)
   const [draftSpacing, setDraftSpacing] = useState(DEFAULT_GRID_SPACING)
   const [isAltPressed, setIsAltPressed] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
@@ -124,13 +142,22 @@ function App() {
 
   const persistedDocument = useMemo(() => syncDocumentCanvas(history.present, canvasSize), [history.present, canvasSize])
   const documentState = previewDocument ?? persistedDocument
+  const exportableDocument = useMemo(
+    () => exportDocumentPayload(persistedDocument, toolState.activeStroke, toolState.mirrorX, toolState.mirrorY),
+    [persistedDocument, toolState.activeStroke, toolState.mirrorX, toolState.mirrorY],
+  )
+  const artworkBounds = useMemo(() => getArtworkGridBounds(exportableDocument), [exportableDocument])
   const gridMetrics = useMemo(() => getGridMetrics(documentState.grid.spacing), [documentState.grid.spacing])
   const activeLayer = documentState.layers.find((layer) => layer.id === documentState.activeLayerId) ?? documentState.layers[0]
   const activeLayerStrokes = useMemo(
     () => documentState.strokes.filter((stroke) => stroke.layerId === activeLayer?.id),
     [documentState.strokes, activeLayer?.id],
   )
-  const hoveredStroke = activeLayerStrokes.find((stroke) => stroke.id === toolState.hoveredStrokeId) ?? null
+  const visibleStrokes = useMemo(() => {
+    const visibleLayerIds = new Set(documentState.layers.filter((layer) => layer.visible && layer.opacity > 0).map((layer) => layer.id))
+    return documentState.strokes.filter((stroke) => visibleLayerIds.has(stroke.layerId))
+  }, [documentState.layers, documentState.strokes])
+  const hoveredStroke = visibleStrokes.find((stroke) => stroke.id === toolState.hoveredStrokeId) ?? null
   const shapePreview = useMemo<StrokeDraft | null>(() => {
     if (toolState.selectedTool !== 'shape' || !toolState.hoverPoint) return null
     return {
@@ -193,6 +220,7 @@ function App() {
         }))
         initialSavedAtRef.current = snapshot.savedAt
         lastRecoverySaveRef.current = snapshot.savedAt
+        setHasRecovery(true)
         setNotice(snapshot.activeStroke ? 'Recovered drawing and unfinished path' : 'Recovered latest drawing')
       }
       setIsPersistenceReady(true)
@@ -203,6 +231,10 @@ function App() {
     })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    savePreferences(preferences)
+  }, [preferences])
 
   useEffect(() => {
     if (!isPersistenceReady) return
@@ -263,8 +295,8 @@ function App() {
   useEffect(() => {
     const canvas = gridCanvasRef.current
     if (!canvas) return
-    drawGridLayer(configureCanvas(canvas, canvasSize), canvasSize, gridMetrics, viewport, showGridDots)
-  }, [canvasSize, gridMetrics, showGridDots, viewport])
+    drawGridLayer(configureCanvas(canvas, canvasSize), canvasSize, gridMetrics, viewport, showGridDots, preferences.gridDotColor)
+  }, [canvasSize, gridMetrics, preferences.gridDotColor, showGridDots, viewport])
 
   useEffect(() => {
     const canvas = drawingCanvasRef.current
@@ -292,14 +324,14 @@ function App() {
     drawOverlay(configureCanvas(canvas, canvasSize), canvasSize, gridMetrics, viewport, {
       activeStroke: toolState.activeStroke,
       hoverPoint: toolState.hoverPoint,
-      hoveredStroke,
+      hoveredStroke: toolState.selectedTool === 'erase' && hoveredStroke?.layerId === activeLayer?.id ? hoveredStroke : null,
       pickerPoint,
       shapePreview,
       preferDiagonalPreview: toolState.selectedTool === 'draw' && isAltPressed,
       mirrorX: toolState.mirrorX,
       mirrorY: toolState.mirrorY,
     })
-  }, [canvasSize, gridMetrics, hoveredStroke, isAltPressed, pickerPoint, shapePreview, toolState.activeStroke, toolState.hoverPoint, toolState.mirrorX, toolState.mirrorY, toolState.selectedTool, viewport])
+  }, [activeLayer?.id, canvasSize, gridMetrics, hoveredStroke, isAltPressed, pickerPoint, shapePreview, toolState.activeStroke, toolState.hoverPoint, toolState.mirrorX, toolState.mirrorY, toolState.selectedTool, viewport])
 
   const resetTransientState = () => {
     previewDocumentRef.current = null
@@ -424,19 +456,30 @@ function App() {
       eraseAtCanvasPoint(point.x, point.y)
       return
     }
+    const visibleStroke = findStrokeAtCanvasPoint(visibleStrokes, gridMetrics, canvasSize, viewport, point)
     if (toolState.selectedTool === 'erase') {
       const stroke = findStrokeAtCanvasPoint(activeLayerStrokes, gridMetrics, canvasSize, viewport, point)
-      setToolState((current) => ({ ...current, hoverPoint: null, hoveredStrokeId: stroke?.id ?? null }))
+      const hoveredStrokeId = stroke?.id ?? null
+      setToolState((current) => current.hoverPoint === null && current.hoveredStrokeId === hoveredStrokeId
+        ? current
+        : { ...current, hoverPoint: null, hoveredStrokeId })
       return
     }
     if (toolState.selectedTool === 'picker') {
       setPickerPoint(screenPointToWorldPoint(point.x, point.y, canvasSize, viewport))
+      setToolState((current) => ({ ...current, hoverPoint: null, hoveredStrokeId: visibleStroke?.id ?? null }))
       return
     }
-    if (!['draw', 'curve', 'shape'].includes(toolState.selectedTool)) return
+    if (!['draw', 'curve', 'shape'].includes(toolState.selectedTool)) {
+      const hoveredStrokeId = visibleStroke?.id ?? null
+      setToolState((current) => current.hoverPoint === null && current.hoveredStrokeId === hoveredStrokeId
+        ? current
+        : { ...current, hoverPoint: null, hoveredStrokeId })
+      return
+    }
     const hoverPoint = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
     setPickerPoint(null)
-    setToolState((current) => ({ ...current, hoverPoint, hoveredStrokeId: null }))
+    setToolState((current) => ({ ...current, hoverPoint, hoveredStrokeId: visibleStroke?.id ?? null }))
   }
 
   const handlePointerLeave = () => {
@@ -483,14 +526,16 @@ function App() {
       const isPatternFill = toolState.selectedTool === 'patternBucket'
       setHistory((value) => {
         const doc = syncDocumentCanvas(value.present, canvasSize)
-        return pushHistory(value, action === 'background' && !isPatternFill
-          ? setBackgroundColor(doc, toolState.color)
-          : addFill(doc, {
-              color: toolState.color,
-              seed: screenPointToWorldPoint(point.x, point.y, canvasSize, viewport),
-              pattern: isPatternFill ? toolState.pattern : undefined,
-              extendsToCanvasEdge: isPatternFill && action === 'background',
-            }))
+        if (action === 'background' && !isPatternFill) return pushHistory(value, setBackgroundColor(doc, toolState.color))
+        const fill = {
+          color: toolState.color,
+          seed: screenPointToWorldPoint(point.x, point.y, canvasSize, viewport),
+          pattern: isPatternFill ? toolState.pattern : undefined,
+          extendsToCanvasEdge: isPatternFill && action === 'background',
+        }
+        return pushHistory(value, action === 'background'
+          ? addFill(doc, fill)
+          : addFillWithMirrors(doc, fill, toolState.mirrorX, toolState.mirrorY))
       })
       setNotice(isPatternFill ? 'Pattern fill applied' : action === 'background' ? 'Background color updated' : 'Region filled')
       return
@@ -597,14 +642,65 @@ function App() {
     setDraftSpacing(spacing)
     setViewport({ x: 0, y: 0, zoom: 1 })
     resetTransientState()
-    setHistory(createHistory(createDocument(spacing, canvasSize)))
+    setHistory(createHistory(createDocument(spacing, canvasSize, preferences.canvasBackgroundColor)))
+    setHasRecovery(true)
+    setImportError(null)
+    setIsStartupDialog(false)
     setIsDialogOpen(false)
     setNotice('New document created')
   }
 
+  const handleImportDrawing = async (file: File) => {
+    setImportError(null)
+    if (file.size > 25 * 1024 * 1024) {
+      setImportError('This file is larger than 25 MB. Choose a smaller Lines on Grids backup.')
+      return
+    }
+    try {
+      const imported = parseDocumentJson(await file.text())
+      setViewport({ x: 0, y: 0, zoom: 1 })
+      resetTransientState()
+      setHistory(createHistory(imported))
+      setDraftSpacing(imported.grid.spacing)
+      setHasRecovery(true)
+      setIsStartupDialog(false)
+      setIsDialogOpen(false)
+      setNotice(`Opened ${file.name}`)
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : 'This JSON file could not be opened.')
+    }
+  }
+
+  const openDocumentDialog = () => {
+    setDraftSpacing(documentState.grid.spacing)
+    setImportError(null)
+    setIsStartupDialog(false)
+    setIsDialogOpen(true)
+  }
+
   const fitToScreen = () => setViewport({ x: 0, y: 0, zoom: 1 })
-  const exportJson = () => downloadDocumentJson(exportDocumentPayload(persistedDocument, toolState.activeStroke, toolState.mirrorX, toolState.mirrorY), getTimestampedFilename('lines-on-grid', 'json'))
-  const exportPng = () => downloadDrawingPng(exportDocumentPayload(persistedDocument, toolState.activeStroke, toolState.mirrorX, toolState.mirrorY), getTimestampedFilename('lines-on-grid', 'png'), viewport)
+  const exportJson = () => {
+    downloadDocumentJson(exportableDocument, getTimestampedFilename('lines-on-grid', 'json'))
+    setNotice('JSON backup saved')
+  }
+  const exportPng = (bounds: GridExportBounds) => {
+    try {
+      downloadDrawingPng(exportableDocument, getTimestampedFilename('lines-on-grid', 'png'), bounds)
+      setIsExportOpen(false)
+      setNotice('PNG export created')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'PNG export failed')
+    }
+  }
+  const exportSvg = (bounds: GridExportBounds) => {
+    try {
+      downloadDrawingSvg(exportableDocument, getTimestampedFilename('lines-on-grid', 'svg'), bounds)
+      setIsExportOpen(false)
+      setNotice('SVG export created')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'SVG export failed')
+    }
+  }
 
   return (
     <main className="app-shell">
@@ -612,13 +708,14 @@ function App() {
         <div className="brand-mark" aria-hidden="true">LG</div>
         <div className="document-title"><strong>Untitled grid</strong><span>Lines on Grids</span></div>
         <nav className="header-actions" aria-label="Document actions">
-          <button type="button" onClick={() => { setDraftSpacing(documentState.grid.spacing); setIsDialogOpen(true) }}>New</button>
+          <button type="button" onClick={openDocumentDialog}>New / Open</button>
           <span className="toolbar-divider" />
           <IconButton label="Undo" icon="undo" onClick={undoLatestAction} disabled={!canUndo} />
           <IconButton label="Redo" icon="redo" onClick={redoLatestAction} disabled={!canRedo} />
           <span className="toolbar-divider" />
           <button type="button" onClick={exportJson}>Save JSON</button>
-          <button type="button" className="primary-action" onClick={exportPng}>Export PNG</button>
+          <IconButton label="Settings" icon="settings" onClick={() => setIsSettingsOpen(true)} />
+          <button type="button" className="primary-action" onClick={() => setIsExportOpen(true)}>Export</button>
         </nav>
       </header>
 
@@ -656,7 +753,7 @@ function App() {
             <span>cells</span>
           </label>
         </> : null}
-        {['draw', 'curve', 'shape'].includes(toolState.selectedTool) ? <>
+        {['draw', 'curve', 'shape', 'bucket', 'patternBucket'].includes(toolState.selectedTool) ? <>
           <span className="toolbar-divider" />
           <div className="mirror-options" aria-label="Mirror drawing options">
             <span>Mirror</span>
@@ -714,6 +811,7 @@ function App() {
             {saveState === 'loading' ? 'Loading recovery…' : saveState === 'saving' ? 'Saving…' : saveState === 'error' ? 'Recovery unavailable' : 'Saved'}
           </span>
           <span className="status-spacer" />
+          {hoveredStroke ? <span className="hover-width-indicator">Line width <strong>{hoveredStroke.style.lineWidth}</strong> px</span> : null}
           <button type="button" onClick={fitToScreen}>Fit</button>
           <button type="button" aria-pressed={showGridDots} onClick={() => setShowGridDots((visible) => !visible)}>Grid</button>
           <span>{Math.round(viewport.zoom * 100)}%</span>
@@ -765,7 +863,35 @@ function App() {
         </section>
       </aside>
 
-      <NewDrawingDialog isOpen={isDialogOpen} spacing={draftSpacing} minSpacing={MIN_GRID_SPACING} maxSpacing={MAX_GRID_SPACING} onSpacingChange={setDraftSpacing} onConfirm={handleCreateDrawing} onClose={() => setIsDialogOpen(false)} isFirstRun={false} />
+      <NewDrawingDialog
+        isOpen={isDialogOpen}
+        spacing={draftSpacing}
+        minSpacing={MIN_GRID_SPACING}
+        maxSpacing={MAX_GRID_SPACING}
+        onSpacingChange={setDraftSpacing}
+        onConfirm={handleCreateDrawing}
+        onClose={() => { setImportError(null); setIsDialogOpen(false) }}
+        onImport={handleImportDrawing}
+        isStartup={isStartupDialog}
+        canContinue={hasRecovery}
+        error={importError}
+      />
+      <ExportDialog
+        isOpen={isExportOpen}
+        documentState={exportableDocument}
+        artworkBounds={artworkBounds}
+        onExportPng={exportPng}
+        onExportSvg={exportSvg}
+        onClose={() => setIsExportOpen(false)}
+      />
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        preferences={preferences}
+        canvasBackgroundColor={documentState.backgroundColor}
+        onBackgroundColorChange={(color) => updateDocument((doc) => setBackgroundColor(doc, color), 'Background updated')}
+        onPreferencesChange={setPreferences}
+        onClose={() => setIsSettingsOpen(false)}
+      />
     </main>
   )
 }
@@ -940,6 +1066,7 @@ function IconButton({ label, icon, onClick, disabled }: { label: string; icon: s
     plus: <path d="M12 5v14M5 12h14"/>, duplicate: <><rect x="8" y="8" width="11" height="11" rx="1"/><path d="M16 8V5H5v11h3"/></>,
     up: <path d="m7 14 5-5 5 5"/>, down: <path d="m7 10 5 5 5-5"/>, trash: <><path d="M5 7h14M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></>,
     clear: <><path d="m7 17-3-3 8-9 6 6-6 7H8l-1-1Z"/><path d="M11 18h8"/></>,
+    settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></>,
   }
   return <button type="button" className="icon-button" aria-label={label} title={label} onClick={onClick} disabled={disabled}><svg viewBox="0 0 24 24" aria-hidden="true">{icons[icon]}</svg></button>
 }

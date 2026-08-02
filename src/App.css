@@ -160,6 +160,8 @@
 .save-error { color: #e58c80; }
 .status-spacer { flex: 1; }
 .status-bar button { padding: 2px 5px; color: var(--text-muted); }
+.hover-width-indicator { padding: 2px 7px; border: 1px solid var(--border-soft); border-radius: 3px; color: var(--text-muted); background: rgba(255,255,255,.035); font-variant-numeric: tabular-nums; }
+.hover-width-indicator strong { color: var(--text); font-weight: 650; }
 
 .properties-panel { grid-column: 3; grid-row: 3; display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--chrome-1); }
 .panel-section { border-bottom: 1px solid #111213; }
@@ -215,8 +217,10 @@
 
 .dialog-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(0,0,0,.6); backdrop-filter: blur(4px); }
 .dialog-card { width: min(400px, 100%); padding: 20px; border: 1px solid #4b4e52; border-radius: 7px; background: var(--chrome-2); box-shadow: 0 22px 70px rgba(0,0,0,.55); }
+.start-dialog, .export-dialog { width: min(470px, 100%); }
 .dialog-card h2 { margin: 0 0 7px; font-size: 17px; font-weight: 600; }
 .dialog-card p { margin: 0 0 20px; color: var(--text-muted); }
+.dialog-card .dialog-error { margin: -8px 0 14px; padding: 8px 10px; border: 1px solid rgba(229,140,128,.45); border-radius: 4px; color: #f0aaa0; background: rgba(150,42,28,.18); }
 .dialog-field { display: grid; gap: 11px; }
 .dialog-field label, .dialog-reading { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .dialog-reading { color: var(--text-dim); font-size: 10px; }
@@ -225,6 +229,25 @@
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 20px; }
 .dialog-actions button { border: 1px solid var(--border); border-radius: 4px; padding: 7px 11px; color: var(--text); background: var(--chrome-1); cursor: pointer; }
 .dialog-actions button:last-child { border-color: var(--accent); background: var(--accent); font-weight: 600; }
+.new-document-field { margin: 10px 0; padding: 13px; border: 1px solid var(--border); border-radius: 5px; background: rgba(0,0,0,.12); }
+.start-choice { display: grid; gap: 3px; width: 100%; margin: 9px 0; padding: 11px 12px; border: 1px solid var(--border); border-radius: 5px; color: var(--text); background: var(--chrome-1); text-align: left; cursor: pointer; }
+.start-choice:hover { border-color: #62676d; background: var(--chrome-3); }
+.start-choice span { color: var(--text-muted); font-size: 11px; }
+.start-choice input[type='file'] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.continue-choice { border-color: rgba(73,133,232,.7); box-shadow: inset 3px 0 var(--accent); }
+.export-reading { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; padding: 10px 12px; border-radius: 4px; background: var(--chrome-1); }
+.export-reading span { color: var(--text-muted); font-size: 11px; }
+.crop-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 12px; margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 5px; }
+.crop-fields legend { padding: 0 5px; color: var(--text-muted); }
+.crop-fields label { display: grid; grid-template-columns: 1fr 64px auto; align-items: center; gap: 6px; color: var(--text-muted); }
+.crop-fields label input[type='number'] { width: 64px; }
+.crop-fields small { color: var(--text-dim); }
+.settings-fields { display: grid; gap: 8px; }
+.settings-fields label { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--chrome-1); }
+.settings-fields label > span { display: grid; gap: 3px; }
+.settings-fields small { color: var(--text-muted); }
+.settings-fields input[type='color'] { width: 38px; height: 32px; padding: 1px; border: 1px solid var(--border); border-radius: 4px; background: none; cursor: pointer; }
+.split-actions { justify-content: space-between; }
 
 @media (max-width: 900px) {
   .app-shell { grid-template-columns: 44px minmax(0, 1fr) 220px; }

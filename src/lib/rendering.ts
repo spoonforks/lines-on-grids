@@ -21,7 +21,7 @@ import type {
 const GRID_DOT_RADIUS = 1.5
 const HOVER_DOT_RADIUS = 4.8
 const ACTIVE_DOT_RADIUS = 3.2
-const GRID_DOT_COLOR = 'rgba(104, 112, 122, 0.2)'
+const DEFAULT_GRID_DOT_COLOR = '#68707a'
 const PREVIEW_COLOR = 'rgba(95, 108, 175, 0.56)'
 const ERASE_PREVIEW_COLOR = 'rgba(201, 120, 92, 0.44)'
 const PICKER_PREVIEW_COLOR = 'rgba(95, 108, 175, 0.24)'
@@ -57,6 +57,7 @@ export function drawGridLayer(
   metrics: GridMetrics,
   viewport: ViewportState,
   isVisible = true,
+  dotColor = DEFAULT_GRID_DOT_COLOR,
 ) {
   context.clearRect(0, 0, size.width, size.height)
 
@@ -64,7 +65,9 @@ export function drawGridLayer(
     return
   }
 
-  context.fillStyle = GRID_DOT_COLOR
+  context.save()
+  context.fillStyle = dotColor
+  context.globalAlpha = 0.2
 
   const bounds = getVisibleGridBounds(size, viewport, metrics)
 
@@ -81,6 +84,7 @@ export function drawGridLayer(
       drawCircle(context, screenPoint, GRID_DOT_RADIUS)
     }
   }
+  context.restore()
 }
 
 export function drawDrawingSurface(
@@ -526,14 +530,21 @@ function applyFloodFill(
 
 export function getAdjacentAntialiasedPixelIndexes(imageData: ImageData, regionPixelIndexes: Int32Array) {
   const { width, height, data } = imageData
-  const selected = new Uint8Array(width * height)
+  const visited = new Uint8Array(width * height)
   const pixelIndexes: number[] = []
+  let frontier: number[] = []
 
   for (const regionPixelIndex of regionPixelIndexes) {
     const pixelNumber = regionPixelIndex / 4
+    visited[pixelNumber] = 1
+  }
+
+  // Canvas antialiasing can span more than one pixel at curved intersections.
+  // Walk the connected translucent band so the fill sits beneath every edge
+  // pixel, then redraw the original stroke over it.
+  const collectTranslucentNeighbors = (pixelNumber: number, target: number[]) => {
     const centerX = pixelNumber % width
     const centerY = Math.floor(pixelNumber / width)
-
     for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
       const y = centerY + offsetY
       if (y < 0 || y >= height) continue
@@ -542,14 +553,23 @@ export function getAdjacentAntialiasedPixelIndexes(imageData: ImageData, regionP
         const x = centerX + offsetX
         if (x < 0 || x >= width) continue
         const neighborNumber = y * width + x
-        if (selected[neighborNumber]) continue
+        if (visited[neighborNumber]) continue
+        visited[neighborNumber] = 1
         const neighborIndex = neighborNumber * 4
         const alpha = data[neighborIndex + 3]
         if (alpha === 0 || alpha === 255) continue
-        selected[neighborNumber] = 1
         pixelIndexes.push(neighborIndex)
+        target.push(neighborNumber)
       }
     }
+  }
+
+  for (const regionPixelIndex of regionPixelIndexes) collectTranslucentNeighbors(regionPixelIndex / 4, frontier)
+
+  for (let depth = 1; depth < 4 && frontier.length > 0; depth += 1) {
+    const nextFrontier: number[] = []
+    for (const pixelNumber of frontier) collectTranslucentNeighbors(pixelNumber, nextFrontier)
+    frontier = nextFrontier
   }
 
   return pixelIndexes

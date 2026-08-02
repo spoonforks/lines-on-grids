@@ -8,7 +8,10 @@ interface NewDrawingDialogProps {
   onSpacingChange: (spacing: number) => void
   onConfirm: (spacing: number) => void
   onClose: () => void
-  isFirstRun: boolean
+  onImport: (file: File) => void
+  isStartup: boolean
+  canContinue: boolean
+  error?: string | null
 }
 
 export function NewDrawingDialog({
@@ -19,7 +22,10 @@ export function NewDrawingDialog({
   onSpacingChange,
   onConfirm,
   onClose,
-  isFirstRun,
+  onImport,
+  isStartup,
+  canContinue,
+  error,
 }: NewDrawingDialogProps) {
   const [numericValue, setNumericValue] = useState(String(spacing))
 
@@ -44,13 +50,22 @@ export function NewDrawingDialog({
 
   return (
     <div className="dialog-backdrop" role="presentation">
-      <div className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="new-drawing-title">
+      <div className="dialog-card start-dialog" role="dialog" aria-modal="true" aria-labelledby="new-drawing-title">
         <h2 id="new-drawing-title">
-          {isFirstRun ? 'Set up your first drawing' : 'Start a new drawing'}
+          {isStartup ? 'Start drawing' : 'Start a new drawing'}
         </h2>
-        <p>Choose the dot spacing before the canvas resets. Smaller spacing creates a denser grid.</p>
+        <p>{isStartup ? 'Continue your autosaved work, create a new grid, or open a JSON drawing.' : 'Choose the dot spacing before the canvas resets.'}</p>
+        {error ? <p className="dialog-error" role="alert">{error}</p> : null}
 
-        <div className="dialog-field">
+        {isStartup && canContinue ? (
+          <button type="button" className="start-choice continue-choice" onClick={onClose}>
+            <strong>Continue autosaved drawing</strong>
+            <span>Resume exactly where you left off</span>
+          </button>
+        ) : null}
+
+        <div className="dialog-field new-document-field">
+          <strong>New drawing</strong>
           <label htmlFor="grid-spacing-range">
             <span>Grid spacing</span>
             <strong>{spacing}px</strong>
@@ -82,14 +97,24 @@ export function NewDrawingDialog({
           />
         </div>
 
+        <label className="start-choice import-choice">
+          <input type="file" accept="application/json,.json" onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file) onImport(file)
+            event.currentTarget.value = ''
+          }} />
+          <strong>Import JSON</strong>
+          <span>Open a Lines on Grids backup</span>
+        </label>
+
         <div className="dialog-actions">
-          {!isFirstRun ? (
+          {!isStartup ? (
             <button type="button" onClick={onClose}>
               Cancel
             </button>
           ) : null}
           <button type="button" onClick={() => onConfirm(spacing)}>
-            {isFirstRun ? 'Create canvas' : 'Start fresh'}
+            Create new drawing
           </button>
         </div>
       </div>
