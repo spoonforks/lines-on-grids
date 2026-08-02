@@ -8,6 +8,18 @@ A focused, browser-based drawing studio for building precise artwork on a dot gr
 
 The repository includes an automated GitHub Pages deployment. Every push to `main` is tested, built, and published through GitHub Actions.
 
+## Examples
+
+Artwork created entirely in Lines on Grids. The transparent exports adapt cleanly to the page around them.
+
+<p align="center">
+  <img src="Examples/lines-on-grid-2026-07-16T00-46-36-214Z.png" width="48%" alt="Colorful symmetrical maze artwork made with Lines on Grids">
+  <img src="Examples/lines-on-grid-2026-07-16T01-12-17-962Z.png" width="48%" alt="Organic geometric artwork made with Lines on Grids">
+</p>
+<p align="center">
+  <img src="Examples/lines-on-grid-2026-07-16T01-22-23-717Z.png" width="68%" alt="Blue, pink, black, and white symmetrical artwork made with Lines on Grids">
+</p>
+
 ## Tools
 
 - Grid pen (`B`) — builds orthogonal and 45° paths; hold `Alt` for direct segments

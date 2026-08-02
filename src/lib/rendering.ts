@@ -478,6 +478,8 @@ function applyFloodFill(
     return null
   }
 
+  const edgePixelIndexes = pattern ? [] : getAdjacentAntialiasedPixelIndexes(imageData, region.pixelIndexes)
+
   for (const pixelIndex of region.pixelIndexes) {
     let shouldPaint = true
 
@@ -496,9 +498,47 @@ function applyFloodFill(
     imageData.data[pixelIndex + 3] = shouldPaint ? fillColor[3] : 0
   }
 
+  for (const pixelIndex of edgePixelIndexes) {
+    imageData.data[pixelIndex] = fillColor[0]
+    imageData.data[pixelIndex + 1] = fillColor[1]
+    imageData.data[pixelIndex + 2] = fillColor[2]
+    imageData.data[pixelIndex + 3] = fillColor[3]
+  }
+
   context.putImageData(imageData, 0, 0)
 
   return region
+}
+
+export function getAdjacentAntialiasedPixelIndexes(imageData: ImageData, regionPixelIndexes: Int32Array) {
+  const { width, height, data } = imageData
+  const selected = new Uint8Array(width * height)
+  const pixelIndexes: number[] = []
+
+  for (const regionPixelIndex of regionPixelIndexes) {
+    const pixelNumber = regionPixelIndex / 4
+    const centerX = pixelNumber % width
+    const centerY = Math.floor(pixelNumber / width)
+
+    for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+      const y = centerY + offsetY
+      if (y < 0 || y >= height) continue
+      for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+        if (offsetX === 0 && offsetY === 0) continue
+        const x = centerX + offsetX
+        if (x < 0 || x >= width) continue
+        const neighborNumber = y * width + x
+        if (selected[neighborNumber]) continue
+        const neighborIndex = neighborNumber * 4
+        const alpha = data[neighborIndex + 3]
+        if (alpha === 0 || alpha === 255) continue
+        selected[neighborNumber] = 1
+        pixelIndexes.push(neighborIndex)
+      }
+    }
+  }
+
+  return pixelIndexes
 }
 
 const BAYER_4X4 = [

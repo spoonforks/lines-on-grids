@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react'
 import './App.css'
+import { ColorWheel } from './components/ColorWheel'
 import { NewDrawingDialog } from './components/NewDrawingDialog'
+import { normalizeHexColor } from './lib/color'
 import {
   DEFAULT_BACKGROUND_COLOR,
   addFill,
@@ -129,6 +131,23 @@ function App() {
   const hasVisibleArtwork = documentState.strokes.length > 0 || documentState.fills.length > 0 || documentState.backgroundColor !== DEFAULT_BACKGROUND_COLOR
   const canEditLayer = Boolean(activeLayer?.visible && !activeLayer.locked)
   const cursorTool = isSpacePressed ? 'hand' : toolState.selectedTool
+  const documentColors = useMemo(() => {
+    const colors: string[] = []
+    const seen = new Set<string>()
+    const addColor = (color: string) => {
+      const normalized = normalizeHexColor(color)
+      if (!normalized || seen.has(normalized)) return
+      seen.add(normalized)
+      colors.push(normalized)
+    }
+    const visibleLayerIds = new Set(documentState.layers.filter((layer) => layer.visible && layer.opacity > 0).map((layer) => layer.id))
+
+    addColor(documentState.backgroundColor)
+    for (const stroke of documentState.strokes) if (visibleLayerIds.has(stroke.layerId)) addColor(stroke.style.color)
+    for (const fill of documentState.fills) if (visibleLayerIds.has(fill.layerId)) addColor(fill.color)
+    if (toolState.activeStroke && visibleLayerIds.has(documentState.activeLayerId)) addColor(toolState.activeStroke.style.color)
+    return colors
+  }, [documentState, toolState.activeStroke])
 
   useEffect(() => {
     const workspace = workspaceRef.current
@@ -659,10 +678,15 @@ function App() {
 
       <aside className="properties-panel" aria-label="Panels">
         <section className="panel-section color-panel">
-          <div className="panel-heading"><strong>Color</strong></div>
-          <div className="color-spectrum" />
-          <div className="swatch-grid">
+          <div className="panel-heading"><strong>Color</strong><span>{toolState.color.toUpperCase()}</span></div>
+          <ColorWheel color={toolState.color} onChange={(color) => setToolState((current) => ({ ...current, color }))} />
+          <div className="palette-heading"><span>Swatches</span><span>{COLOR_SWATCHES.length}</span></div>
+          <div className="swatch-grid" aria-label="Color swatches">
             {COLOR_SWATCHES.map((color) => <button key={color} type="button" className="swatch" aria-label={`Use ${color}`} aria-pressed={toolState.color === color} style={{ backgroundColor: color }} onClick={() => setToolState((current) => ({ ...current, color }))} />)}
+          </div>
+          <div className="palette-heading document-palette-heading"><span>Document colors</span><span>{documentColors.length}</span></div>
+          <div className="swatch-grid document-swatch-grid" aria-label="Colors currently visible in the document">
+            {documentColors.map((color) => <button key={color} type="button" className="swatch" aria-label={`Use document color ${color}`} aria-pressed={toolState.color === color} title={color.toUpperCase()} style={{ backgroundColor: color }} onClick={() => setToolState((current) => ({ ...current, color }))} />)}
           </div>
         </section>
 
