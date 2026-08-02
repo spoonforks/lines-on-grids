@@ -1,12 +1,6 @@
 # Lines on Grids
 
-A focused, browser-based drawing studio for building precise artwork on a dot grid.
-
-<img src="src/assets/hero.png" width="140" alt="Lines on Grids layered canvas mark">
-
-## Live app
-
-The repository includes an automated GitHub Pages deployment. Every push to `main` is tested, built, and published through GitHub Actions.
+A browser app for making line art on a dot grid.
 
 ## Examples
 
@@ -51,8 +45,4 @@ npm run lint
 npm run build
 ```
 
-## GitHub Pages
-
-The deployment workflow automatically configures Vite for the repository subpath and publishes the production `dist` output. In the repository settings, choose **Pages → Build and deployment → GitHub Actions** as the source.
-
-The app is implemented with React, TypeScript, and a layered Canvas 2D renderer. Geometry is culled outside the viewport, ordinary opaque layers render without intermediate surfaces, flood fills use bounded typed-array queues, and history is capped for predictable long-session memory use.
+# :)
