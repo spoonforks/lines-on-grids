@@ -5,7 +5,8 @@ export interface GridPoint {
 
 export type BrushMode = 'auto' | 'curve'
 export type DitherPattern = 'bayer25' | 'bayer50' | 'bayer75' | 'diagonal' | 'crosshatch' | 'stipple'
-export type ToolMode = 'draw' | 'curve' | 'erase' | 'bucket' | 'patternBucket' | 'picker' | 'hand' | 'zoom'
+export type ShapeMode = 'square' | 'circle' | 'diamond' | 'triangle'
+export type ToolMode = 'draw' | 'curve' | 'shape' | 'erase' | 'bucket' | 'patternBucket' | 'picker' | 'hand' | 'zoom'
 
 export interface WorldPoint {
   x: number
@@ -73,6 +74,8 @@ export interface ToolState {
   color: string
   lineWidth: number
   pattern: DitherPattern
+  shape: ShapeMode
+  shapeSize: number
   mirrorX: boolean
   mirrorY: boolean
   activeStroke: StrokeDraft | null

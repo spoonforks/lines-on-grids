@@ -117,4 +117,15 @@ describe('mirror geometry', () => {
     const vertical = [{ x: 0, y: 1 }, { x: 0, y: 4 }]
     expect(getMirroredPointSets(vertical, true, false)).toHaveLength(1)
   })
+
+  it('deduplicates closed symmetric outlines regardless of traversal direction', () => {
+    const square = [
+      { x: -2, y: -2 },
+      { x: 2, y: -2 },
+      { x: 2, y: 2 },
+      { x: -2, y: 2 },
+      { x: -2, y: -2 },
+    ]
+    expect(getMirroredPointSets(square, true, true)).toHaveLength(1)
+  })
 })
