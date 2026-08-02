@@ -105,6 +105,7 @@ export function drawOverlay(
     hoverPoint: GridPoint | null
     hoveredStroke: Stroke | null
     pickerPoint: WorldPoint | null
+    shapePreview: StrokeDraft | null
     preferDiagonalPreview: boolean
     mirrorX: boolean
     mirrorY: boolean
@@ -133,6 +134,19 @@ export function drawOverlay(
           brush: options.activeStroke.brush,
         }, { colorOverride: PREVIEW_COLOR, dashed: true })
       }
+    }
+  }
+
+  if (options.shapePreview) {
+    const previewPointSets = getMirroredPointSets(options.shapePreview.points, options.mirrorX, options.mirrorY)
+    for (let index = 0; index < previewPointSets.length; index += 1) {
+      drawStroke(context, size, metrics, viewport, {
+        id: `shape-preview-${index}`,
+        layerId: 'active',
+        points: previewPointSets[index],
+        style: options.shapePreview.style,
+        brush: 'auto',
+      }, { colorOverride: PREVIEW_COLOR, dashed: true, skipCulling: true })
     }
   }
 

@@ -31,6 +31,7 @@ import {
 import { createHistory, pushHistory, redoHistory, undoHistory } from './lib/history'
 import { loadRecoverySnapshot, saveRecoverySnapshot } from './lib/persistence'
 import type { RecoverySnapshot } from './lib/persistence'
+import { createShapePoints, MAX_SHAPE_SIZE, MIN_SHAPE_SIZE, normalizeShapeSize, SHAPE_SIZE_STEP } from './lib/shapes'
 import {
   configureCanvas,
   drawActiveStrokeLayer,
@@ -46,7 +47,9 @@ import type {
   CanvasSize,
   DitherPattern,
   DrawingDocument,
+  ShapeMode,
   Stroke,
+  StrokeDraft,
   ToolMode,
   ToolState,
   ViewportState,
@@ -101,6 +104,8 @@ function App() {
     color: '#111111',
     lineWidth: 4,
     pattern: 'bayer50',
+    shape: 'square',
+    shapeSize: 4,
     mirrorX: initialSnapshotRef.current?.mirrorX ?? false,
     mirrorY: initialSnapshotRef.current?.mirrorY ?? false,
     activeStroke: initialSnapshotRef.current?.activeStroke ?? null,
@@ -126,6 +131,14 @@ function App() {
     [documentState.strokes, activeLayer?.id],
   )
   const hoveredStroke = activeLayerStrokes.find((stroke) => stroke.id === toolState.hoveredStrokeId) ?? null
+  const shapePreview = useMemo<StrokeDraft | null>(() => {
+    if (toolState.selectedTool !== 'shape' || !toolState.hoverPoint) return null
+    return {
+      points: createShapePoints(toolState.hoverPoint, toolState.shape, toolState.shapeSize),
+      style: { color: toolState.color, lineWidth: toolState.lineWidth },
+      brush: 'auto',
+    }
+  }, [toolState.color, toolState.hoverPoint, toolState.lineWidth, toolState.selectedTool, toolState.shape, toolState.shapeSize])
   const canUndo = history.past.length > 0
   const canRedo = history.future.length > 0
   const hasVisibleArtwork = documentState.strokes.length > 0 || documentState.fills.length > 0 || documentState.backgroundColor !== DEFAULT_BACKGROUND_COLOR
@@ -281,11 +294,12 @@ function App() {
       hoverPoint: toolState.hoverPoint,
       hoveredStroke,
       pickerPoint,
+      shapePreview,
       preferDiagonalPreview: toolState.selectedTool === 'draw' && isAltPressed,
       mirrorX: toolState.mirrorX,
       mirrorY: toolState.mirrorY,
     })
-  }, [canvasSize, gridMetrics, hoveredStroke, isAltPressed, pickerPoint, toolState.activeStroke, toolState.hoverPoint, toolState.mirrorX, toolState.mirrorY, toolState.selectedTool, viewport])
+  }, [canvasSize, gridMetrics, hoveredStroke, isAltPressed, pickerPoint, shapePreview, toolState.activeStroke, toolState.hoverPoint, toolState.mirrorX, toolState.mirrorY, toolState.selectedTool, viewport])
 
   const resetTransientState = () => {
     previewDocumentRef.current = null
@@ -419,7 +433,7 @@ function App() {
       setPickerPoint(screenPointToWorldPoint(point.x, point.y, canvasSize, viewport))
       return
     }
-    if (!['draw', 'curve'].includes(toolState.selectedTool)) return
+    if (!['draw', 'curve', 'shape'].includes(toolState.selectedTool)) return
     const hoverPoint = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
     setPickerPoint(null)
     setToolState((current) => ({ ...current, hoverPoint, hoveredStrokeId: null }))
@@ -479,6 +493,21 @@ function App() {
             }))
       })
       setNotice(isPatternFill ? 'Pattern fill applied' : action === 'background' ? 'Background color updated' : 'Region filled')
+      return
+    }
+    if (toolState.selectedTool === 'shape') {
+      const center = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
+      if (!center) return
+      const shapeDraft: StrokeDraft = {
+        points: createShapePoints(center, toolState.shape, toolState.shapeSize),
+        style: { color: toolState.color, lineWidth: toolState.lineWidth },
+        brush: 'auto',
+      }
+      setHistory((value) => pushHistory(
+        value,
+        commitStrokeWithMirrors(syncDocumentCanvas(value.present, canvasSize), shapeDraft, toolState.mirrorX, toolState.mirrorY),
+      ))
+      setNotice(`${SHAPE_OPTIONS.find((shape) => shape.id === toolState.shape)?.label ?? 'Shape'} placed`)
       return
     }
     if (!['draw', 'curve'].includes(toolState.selectedTool)) return
@@ -601,7 +630,7 @@ function App() {
           <input type="color" value={toolState.color} onChange={(event) => setToolState((current) => ({ ...current, color: event.target.value }))} />
           <code>{toolState.color.toUpperCase()}</code>
         </label>
-        {['draw', 'curve', 'erase'].includes(toolState.selectedTool) ? <>
+        {['draw', 'curve', 'shape', 'erase'].includes(toolState.selectedTool) ? <>
           <span className="toolbar-divider" />
           <label className="width-control">
             <span>{toolState.selectedTool === 'erase' ? 'Size' : 'Line width'}</span>
@@ -610,7 +639,24 @@ function App() {
             <span>px</span>
           </label>
         </> : null}
-        {['draw', 'curve'].includes(toolState.selectedTool) ? <>
+        {toolState.selectedTool === 'shape' ? <>
+          <span className="toolbar-divider" />
+          <div className="shape-options" aria-label="Shape presets">
+            <span>Shape</span>
+            {SHAPE_OPTIONS.map((shape) => (
+              <button key={shape.id} type="button" className="shape-preset" aria-label={shape.label} aria-pressed={toolState.shape === shape.id} title={shape.label} onClick={() => setToolState((current) => ({ ...current, shape: shape.id }))}>
+                <ShapePresetIcon name={shape.id} />
+              </button>
+            ))}
+          </div>
+          <label className="shape-size-control">
+            <span>Size</span>
+            <input type="range" min={MIN_SHAPE_SIZE} max={MAX_SHAPE_SIZE} step={SHAPE_SIZE_STEP} value={toolState.shapeSize} onChange={(event) => setToolState((current) => ({ ...current, shapeSize: normalizeShapeSize(Number(event.target.value)) }))} />
+            <input type="number" min={MIN_SHAPE_SIZE} max={MAX_SHAPE_SIZE} step={SHAPE_SIZE_STEP} value={toolState.shapeSize} onChange={(event) => setToolState((current) => ({ ...current, shapeSize: normalizeShapeSize(Number(event.target.value)) }))} />
+            <span>cells</span>
+          </label>
+        </> : null}
+        {['draw', 'curve', 'shape'].includes(toolState.selectedTool) ? <>
           <span className="toolbar-divider" />
           <div className="mirror-options" aria-label="Mirror drawing options">
             <span>Mirror</span>
@@ -627,7 +673,7 @@ function App() {
             ))}
           </div>
         </> : null}
-        <span className="options-hint">{['draw', 'curve'].includes(toolState.selectedTool) ? 'Click dots to build a path · Right-click or Enter to finish · Alt for direct segments' : toolState.selectedTool === 'patternBucket' ? 'Choose a preset, then click a region or the open canvas to apply the pattern' : 'Space-drag to pan · Mouse wheel to zoom'}</span>
+        <span className="options-hint">{['draw', 'curve'].includes(toolState.selectedTool) ? 'Click dots to build a path · Right-click or Enter to finish · Alt for direct segments' : toolState.selectedTool === 'shape' ? 'Click a grid point to place the shape' : toolState.selectedTool === 'patternBucket' ? 'Choose a preset, then click a region or the open canvas to apply the pattern' : 'Space-drag to pan · Mouse wheel to zoom'}</span>
       </section>
 
       <aside className="tool-dock" aria-label="Tools">
@@ -837,6 +883,7 @@ const DITHER_PRESETS: Array<{ id: DitherPattern; label: string }> = [
 const TOOL_OPTIONS: Array<{ id: ToolMode; label: string; shortcut: string }> = [
   { id: 'draw', label: 'Grid pen', shortcut: 'B' },
   { id: 'curve', label: 'Curve pen', shortcut: 'C' },
+  { id: 'shape', label: 'Shape', shortcut: 'U' },
   { id: 'erase', label: 'Eraser', shortcut: 'E' },
   { id: 'bucket', label: 'Fill', shortcut: 'G' },
   { id: 'patternBucket', label: 'Pattern fill', shortcut: 'K' },
@@ -849,12 +896,30 @@ function ToolIcon({ name }: { name: ToolMode }) {
   const paths: Record<ToolMode, React.ReactNode> = {
     draw: <><path d="m5 19 3.5-.8L19 7.7 16.3 5 5.8 15.5 5 19Z"/><path d="m14.8 6.5 2.7 2.7"/></>,
     curve: <><path d="M5 18c0-7 3-12 9-12h4"/><circle cx="5" cy="18" r="1.5"/><circle cx="18" cy="6" r="1.5"/></>,
+    shape: <><rect x="4.5" y="4.5" width="10" height="10" rx=".5"/><circle cx="15.5" cy="15.5" r="4"/></>,
     erase: <><path d="m7 17-3-3 8-9 6 6-6 7H8l-1-1Z"/><path d="m9.5 8 6 6M11 18h8"/></>,
     bucket: <><path d="m5 12 7-7 7 7-7 7-7-7Z"/><path d="M7.5 9.5h9M18.5 16.5s1.5 1.4 1.5 2.3a1.5 1.5 0 0 1-3 0c0-.9 1.5-2.3 1.5-2.3Z"/></>,
     patternBucket: <><path d="m5 11 7-7 7 7-7 7-7-7Z"/><circle cx="8" cy="11" r=".65"/><circle cx="11" cy="14" r=".65"/><circle cx="14" cy="11" r=".65"/><path d="M19 16s1.5 1.4 1.5 2.3a1.5 1.5 0 0 1-3 0C17.5 17.4 19 16 19 16Z"/></>,
     picker: <><path d="m14 5 5 5-9 9H5v-5l9-9Z"/><path d="m12 7 5 5M6 18h4"/></>,
     hand: <path d="M8 11V7a1.5 1.5 0 0 1 3 0v3-5a1.5 1.5 0 0 1 3 0v5-4a1.5 1.5 0 0 1 3 0v6l1-1a1.7 1.7 0 0 1 2.5 2.2l-4.3 5.4A4 4 0 0 1 13 20h-2.5a4 4 0 0 1-3.2-1.6L4 14a1.7 1.7 0 0 1 2.5-2.2L8 13v-2Z"/>,
     zoom: <><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5M10.5 8v5M8 10.5h5"/></>,
+  }
+  return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
+}
+
+const SHAPE_OPTIONS: Array<{ id: ShapeMode; label: string }> = [
+  { id: 'square', label: 'Square' },
+  { id: 'circle', label: 'Circle' },
+  { id: 'diamond', label: 'Diamond' },
+  { id: 'triangle', label: 'Triangle' },
+]
+
+function ShapePresetIcon({ name }: { name: ShapeMode }) {
+  const paths: Record<ShapeMode, React.ReactNode> = {
+    square: <rect x="4" y="4" width="16" height="16"/>,
+    circle: <circle cx="12" cy="12" r="8"/>,
+    diamond: <path d="m12 3 9 9-9 9-9-9 9-9Z"/>,
+    triangle: <path d="m12 3 9 17H3L12 3Z"/>,
   }
   return <svg viewBox="0 0 24 24" aria-hidden="true">{paths[name]}</svg>
 }

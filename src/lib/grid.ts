@@ -315,8 +315,39 @@ function areSamePoint(first: GridPoint | undefined, second: GridPoint | undefine
 
 function arePointSetsEqual(first: GridPoint[], second: GridPoint[]) {
   if (first.length !== second.length) return false
+  let sameOrder = true
   for (let index = 0; index < first.length; index += 1) {
-    if (!areSamePoint(first[index], second[index])) return false
+    if (!areSamePoint(first[index], second[index])) {
+      sameOrder = false
+      break
+    }
   }
-  return true
+  if (sameOrder) return true
+
+  // Closed outlines are the same geometry even when a mirror changes their
+  // starting vertex or traversal direction. Avoid storing and rendering those
+  // copies twice when a symmetric shape is centered on a mirror axis.
+  if (first.length > 256) return false
+  if (!areNearlySamePoint(first[0], first.at(-1)) || !areNearlySamePoint(second[0], second.at(-1))) return false
+  const firstLoop = first.slice(0, -1)
+  const secondLoop = second.slice(0, -1)
+  for (let start = 0; start < secondLoop.length; start += 1) {
+    if (!areNearlySamePoint(firstLoop[0], secondLoop[start])) continue
+    for (const direction of [1, -1]) {
+      let matches = true
+      for (let index = 1; index < firstLoop.length; index += 1) {
+        const secondIndex = (start + direction * index + secondLoop.length) % secondLoop.length
+        if (!areNearlySamePoint(firstLoop[index], secondLoop[secondIndex])) {
+          matches = false
+          break
+        }
+      }
+      if (matches) return true
+    }
+  }
+  return false
+}
+
+function areNearlySamePoint(first: GridPoint | undefined, second: GridPoint | undefined) {
+  return first !== undefined && second !== undefined && Math.abs(first.x - second.x) < 1e-9 && Math.abs(first.y - second.y) < 1e-9
 }
