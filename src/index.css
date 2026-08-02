@@ -1,0 +1,35 @@
+:root {
+  --chrome-0: #171819;
+  --chrome-1: #202224;
+  --chrome-2: #292b2e;
+  --chrome-3: #34373a;
+  --border: #3b3e42;
+  --border-soft: #303236;
+  --text: #f2f2f3;
+  --text-muted: #a8abb0;
+  --text-dim: #777b81;
+  --accent: #4387f4;
+  --accent-hover: #5795f7;
+  --accent-soft: rgba(67, 135, 244, 0.2);
+  --workspace: #111213;
+  --sans: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  background: var(--chrome-0);
+  font: 12px/1.35 var(--sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { width: 100%; height: 100%; }
+body { margin: 0; overflow: hidden; background: var(--chrome-0); }
+button, input, select { font: inherit; }
+button { color: inherit; }
+svg { display: block; }
+
+button:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
