@@ -26,16 +26,9 @@ A browser app for making line art on a dot grid. Yeaa
 - Hand (`H` or hold `Space`) — pans the workspace
 - Zoom (`Z`) — click to zoom in, `Alt`-click to zoom out; the wheel zooms at the pointer
 
-Right-click or press `Enter` to commit a path. Press `Escape` to cancel, `[` / `]` to change tool size, and `Ctrl/Cmd+Z` to undo. Use the Hand tool or hold `Space` and drag to pan.
+Right-click or press `Enter` to commit a path. Press `Escape` to cancel, `[` / `]` to change tool size, and `Ctrl/Cmd+Z` to undo. Use the Hand tool, drag right-clicl, or hold `Space` and drag to pan.
 
-## Development
 
-```bash
-npm install
-npm run dev
-npm run test
-npm run lint
-npm run build
-```
-
-# :)
+( ͡° ͜ʖ ͡°)
+( ͡⊙ ͜ʖ ͡⊙)
+( ͡◉ ͜ʖ ͡◉)
