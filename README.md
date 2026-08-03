@@ -29,7 +29,7 @@ Artwork created entirely in Lines on Grids. The transparent exports adapt cleanl
 - Grid pen (`B`) — builds orthogonal and 45° paths; hold `Alt` for direct segments
 - Curve pen (`C`) — creates rounded grid-aligned transitions
 - Shape (`U`) — places grid-sized squares, circles, diamonds, and triangles
-- Select (`M`) — selects a grid rectangle for copying, pasting, rotating, or flipping artwork
+- Select (`M`) — selects a grid rectangle for moving, copying, pasting, rotating, or flipping artwork
 - Eraser (`E`) — cuts geometry on the active layer
 - Fill (`G`) — fills enclosed regions or changes the background
 - Pattern fill (`K`) — fills a region with ordered dither, diagonal, crosshatch, or stipple presets

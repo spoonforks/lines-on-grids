@@ -39,6 +39,7 @@ import {
   gridPointToWorldPoint,
   screenPointToWorldPoint,
   snapScreenPointToGrid,
+  worldPointToGridPoint,
 } from './lib/grid'
 import { createHistory, pushHistory, redoHistory, undoHistory } from './lib/history'
 import { loadRecoverySnapshot, saveRecoverySnapshot } from './lib/persistence'
@@ -47,10 +48,12 @@ import { loadPreferences, savePreferences } from './lib/preferences'
 import { createShapePoints, MAX_SHAPE_SIZE, MIN_SHAPE_SIZE, normalizeShapeSize, SHAPE_SIZE_STEP } from './lib/shapes'
 import {
   copySelectedContent,
+  isGridPointInsideSelection,
   normalizeSelectionBounds,
   pasteSelectedContent,
   selectContentInBounds,
   transformSelectedContent,
+  translateSelectedContent,
 } from './lib/selection'
 import type { ContentSelection, SelectionClipboard, SelectionTransform } from './lib/selection'
 import {
@@ -103,6 +106,13 @@ function App() {
   const previewDocumentRef = useRef<DrawingDocument | null>(null)
   const eraseSessionRef = useRef<{ pointerId: number } | null>(null)
   const selectionSessionRef = useRef<{ pointerId: number; start: GridPoint; end: GridPoint } | null>(null)
+  const selectionMoveSessionRef = useRef<{
+    pointerId: number
+    start: GridPoint
+    end: GridPoint
+    document: DrawingDocument
+    selection: ContentSelection
+  } | null>(null)
   const panStateRef = useRef<{
     pointerId: number
     startX: number
@@ -185,7 +195,8 @@ function App() {
   const hasVisibleArtwork = documentState.strokes.length > 0 || documentState.fills.length > 0 || documentState.backgroundColor !== DEFAULT_BACKGROUND_COLOR
   const canEditLayer = Boolean(activeLayer?.visible && !activeLayer.locked)
   const selectedItemCount = (selection?.strokeIds.length ?? 0) + (selection?.fillIds.length ?? 0)
-  const cursorTool = isSpacePressed ? 'hand' : toolState.selectedTool
+  const canDragSelection = toolState.selectedTool === 'select' && selection && selectedItemCount > 0 && toolState.hoverPoint && isGridPointInsideSelection(toolState.hoverPoint, selection)
+  const cursorTool = isSpacePressed ? 'hand' : canDragSelection ? 'move' : toolState.selectedTool
   const documentColors = useMemo(() => {
     const colors: string[] = []
     const seen = new Set<string>()
@@ -355,6 +366,7 @@ function App() {
     setPreviewDocument(null)
     eraseSessionRef.current = null
     selectionSessionRef.current = null
+    selectionMoveSessionRef.current = null
     setSelection(null)
     setPickerPoint(null)
     setToolState((current) => ({ ...current, activeStroke: null, hoverPoint: null, hoveredStrokeId: null }))
@@ -415,6 +427,17 @@ function App() {
     setNotice(transform === 'rotate90' ? 'Selection rotated 90°' : transform === 'flipHorizontal' ? 'Selection flipped horizontally' : 'Selection flipped vertically')
   }
 
+  const handleMoveSelection = (offset: GridPoint) => {
+    if (!selection || !canEditLayer || selectedItemCount === 0 || (offset.x === 0 && offset.y === 0)) return
+    const result = translateSelectedContent(syncDocumentCanvas(history.present, canvasSize), selection, offset)
+    previewDocumentRef.current = null
+    setPreviewDocument(null)
+    setHistory((value) => pushHistory(value, result.document))
+    setSelection(result.selection)
+    setToolState((current) => ({ ...current, hoverPoint: null }))
+    setNotice(`Selection moved ${Math.abs(offset.x) + Math.abs(offset.y)} ${Math.abs(offset.x) + Math.abs(offset.y) === 1 ? 'cell' : 'cells'}`)
+  }
+
   finishActivePathRef.current = finishActivePath
   undoLatestActionRef.current = undoLatestAction
   redoLatestActionRef.current = redoLatestAction
@@ -463,6 +486,16 @@ function App() {
         redoLatestActionRef.current()
         return
       }
+      if (toolState.selectedTool === 'select' && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+        event.preventDefault()
+        const step = event.shiftKey ? 5 : 1
+        const offset = event.key === 'ArrowLeft' ? { x: -step, y: 0 }
+          : event.key === 'ArrowRight' ? { x: step, y: 0 }
+            : event.key === 'ArrowUp' ? { x: 0, y: -step }
+              : { x: 0, y: step }
+        handleMoveSelection(offset)
+        return
+      }
       if (event.key === '[' || event.key === ']') {
         event.preventDefault()
         const delta = event.key === '[' ? -1 : 1
@@ -481,6 +514,13 @@ function App() {
       setIsAltPressed(false)
       setIsSpacePressed(false)
       panStateRef.current = null
+      const moveSession = selectionMoveSessionRef.current
+      if (moveSession) {
+        selectionMoveSessionRef.current = null
+        previewDocumentRef.current = null
+        setPreviewDocument(null)
+        setSelection(moveSession.selection)
+      }
     }
 
     window.addEventListener('keydown', onKeyDown)
@@ -497,6 +537,11 @@ function App() {
     const rect = event.currentTarget.getBoundingClientRect()
     return { x: event.clientX - rect.left, y: event.clientY - rect.top }
   }
+
+  const nearestGridPoint = (screenX: number, screenY: number) => worldPointToGridPoint(
+    screenPointToWorldPoint(screenX, screenY, canvasSize, viewport),
+    gridMetrics,
+  )
 
   const eraseAtCanvasPoint = (screenX: number, screenY: number) => {
     const worldPoint = screenPointToWorldPoint(screenX, screenY, canvasSize, viewport)
@@ -518,11 +563,30 @@ function App() {
       eraseAtCanvasPoint(point.x, point.y)
       return
     }
+    if (selectionMoveSessionRef.current?.pointerId === event.pointerId) {
+      const session = selectionMoveSessionRef.current
+      const end = nearestGridPoint(point.x, point.y)
+      if (end.x === session.end.x && end.y === session.end.y) return
+      session.end = end
+      const result = translateSelectedContent(session.document, session.selection, {
+        x: end.x - session.start.x,
+        y: end.y - session.start.y,
+      })
+      previewDocumentRef.current = result.document
+      setPreviewDocument(result.document)
+      setSelection(result.selection)
+      setToolState((current) => ({ ...current, hoverPoint: end }))
+      return
+    }
     if (selectionSessionRef.current?.pointerId === event.pointerId) {
-      const end = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
-      if (!end) return
+      const end = nearestGridPoint(point.x, point.y)
       selectionSessionRef.current.end = end
       setSelection({ bounds: normalizeSelectionBounds(selectionSessionRef.current.start, end), strokeIds: [], fillIds: [] })
+      return
+    }
+    if (toolState.selectedTool === 'select') {
+      const hoverPoint = nearestGridPoint(point.x, point.y)
+      setToolState((current) => ({ ...current, hoverPoint, hoveredStrokeId: null }))
       return
     }
     const visibleStroke = findStrokeAtCanvasPoint(visibleStrokes, gridMetrics, canvasSize, viewport, point)
@@ -552,7 +616,7 @@ function App() {
   }
 
   const handlePointerLeave = () => {
-    if (eraseSessionRef.current || panStateRef.current || selectionSessionRef.current) return
+    if (eraseSessionRef.current || panStateRef.current || selectionSessionRef.current || selectionMoveSessionRef.current) return
     setPickerPoint(null)
     setToolState((current) => ({ ...current, hoverPoint: null, hoveredStrokeId: null }))
   }
@@ -585,8 +649,14 @@ function App() {
       return
     }
     if (toolState.selectedTool === 'select') {
-      const start = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
-      if (!start) return
+      const start = nearestGridPoint(point.x, point.y)
+      if (selection && selectedItemCount > 0 && isGridPointInsideSelection(start, selection)) {
+        const document = syncDocumentCanvas(history.present, canvasSize)
+        selectionMoveSessionRef.current = { pointerId: event.pointerId, start, end: start, document, selection }
+        setToolState((current) => ({ ...current, hoverPoint: start }))
+        setNotice('Drag to move the selection on the grid')
+        return
+      }
       selectionSessionRef.current = { pointerId: event.pointerId, start, end: start }
       setSelection({ bounds: normalizeSelectionBounds(start, start), strokeIds: [], fillIds: [] })
       setNotice('Drag to select on the grid')
@@ -669,6 +739,23 @@ function App() {
 
   const finishPointerSession = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (panStateRef.current?.pointerId === event.pointerId) panStateRef.current = null
+    if (selectionMoveSessionRef.current?.pointerId === event.pointerId) {
+      const session = selectionMoveSessionRef.current
+      selectionMoveSessionRef.current = null
+      const offset = { x: session.end.x - session.start.x, y: session.end.y - session.start.y }
+      const result = translateSelectedContent(session.document, session.selection, offset)
+      previewDocumentRef.current = null
+      setPreviewDocument(null)
+      if (event.type === 'pointercancel') {
+        setSelection(session.selection)
+        setNotice('Selection move cancelled')
+      } else {
+        if (offset.x !== 0 || offset.y !== 0) setHistory((value) => pushHistory(value, result.document))
+        setSelection(result.selection)
+        setNotice(offset.x === 0 && offset.y === 0 ? 'Selection unchanged' : 'Selection moved')
+      }
+      setToolState((current) => ({ ...current, hoverPoint: null }))
+    }
     if (selectionSessionRef.current?.pointerId === event.pointerId) {
       const session = selectionSessionRef.current
       selectionSessionRef.current = null
@@ -870,7 +957,7 @@ function App() {
             ))}
           </div>
         </> : null}
-        <span className="options-hint">{['draw', 'curve'].includes(toolState.selectedTool) ? 'Click dots to build a path · Right-click or Enter to finish · Alt for direct segments' : toolState.selectedTool === 'shape' ? 'Click a grid point to place the shape' : toolState.selectedTool === 'select' ? 'Drag a grid rectangle around paths and fills · Ctrl/Cmd+C and Ctrl/Cmd+V' : toolState.selectedTool === 'patternBucket' ? 'Choose a preset, then click a region or the open canvas to apply the pattern' : 'Space-drag to pan · Mouse wheel to zoom'}</span>
+        <span className="options-hint">{['draw', 'curve'].includes(toolState.selectedTool) ? 'Click dots to build a path · Right-click or Enter to finish · Alt for direct segments' : toolState.selectedTool === 'shape' ? 'Click a grid point to place the shape' : toolState.selectedTool === 'select' ? 'Drag inside a selection to move · Arrow keys nudge · Shift+Arrow moves 5 cells · Ctrl/Cmd+C and Ctrl/Cmd+V' : toolState.selectedTool === 'patternBucket' ? 'Choose a preset, then click a region or the open canvas to apply the pattern' : 'Space-drag to pan · Mouse wheel to zoom'}</span>
       </section>
 
       <aside className="tool-dock" aria-label="Tools">
