@@ -5,11 +5,14 @@ A browser app for making line art on a dot grid. Yeaa
 ## Examples
 
 <p align="center">
-  <img src="Examples/1.png" width="72%" alt="A collection of four colorful geometric grid artworks made with Lines on Grids">
+  <img src="Examples/1.png" width="72%" alt="Example 1">
 </p>
 <p align="center">
-  <img src="Examples/2.png" width="40%" alt="A colorful architectural speaker illustration made with Lines on Grids">
-  <img src="Examples/3.png" width="30%" alt="A colorful interlocking geometric tile artwork made with Lines on Grids">
+  <img src="Examples/floww.png" width="72%" alt="Example 2">
+</p>
+<p align="center">
+  <img src="Examples/2.png" width="40%" alt="Example 3">
+  <img src="Examples/3.png" width="30%" alt="Example 4">
 </p>
 
 
