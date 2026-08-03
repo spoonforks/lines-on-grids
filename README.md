@@ -29,6 +29,6 @@ A browser app for making line art on a dot grid. Yeaa
 Right-click or press `Enter` to commit a path. Press `Escape` to cancel, `[` / `]` to change tool size, and `Ctrl/Cmd+Z` to undo. Use the Hand tool, drag right-clicl, or hold `Space` and drag to pan.
 
 
-( ͡° ͜ʖ ͡°)
-( ͡⊙ ͜ʖ ͡⊙)
-( ͡◉ ͜ʖ ͡◉)
+# ( ͡° ͜ʖ ͡°)
+# ( ͡⊙ ͜ʖ ͡⊙)
+# ( ͡◉ ͜ʖ ͡◉)
