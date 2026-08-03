@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { addFill, commitStroke, createDocument } from './document'
-import { copySelectedContent, normalizeSelectionBounds, pasteSelectedContent, selectContentInBounds, transformSelectedContent } from './selection'
+import { copySelectedContent, isGridPointInsideSelection, normalizeSelectionBounds, pasteSelectedContent, selectContentInBounds, transformSelectedContent, translateSelectedContent } from './selection'
 
 describe('grid selection', () => {
   const createArtwork = () => addFill(commitStroke(createDocument(20, { width: 600, height: 400 }), {
@@ -35,5 +35,16 @@ describe('grid selection', () => {
     expect(rotated.document.fills[0]?.seed).toEqual({ x: 40, y: 40 })
     const flipped = transformSelectedContent(documentState, selection, 'flipHorizontal')
     expect(flipped.document.strokes[0]?.points[0]).toEqual({ x: 3, y: 1 })
+  })
+
+  it('moves selected paths, fill seeds, and bounds by whole grid cells', () => {
+    const documentState = createArtwork()
+    const selection = selectContentInBounds(documentState, { minX: 0, minY: 0, maxX: 4, maxY: 4 })
+    const moved = translateSelectedContent(documentState, selection, { x: 3, y: -2 })
+    expect(moved.document.strokes[0]?.points[0]).toEqual({ x: 4, y: -1 })
+    expect(moved.document.fills[0]?.seed).toEqual({ x: 100, y: 0 })
+    expect(moved.selection.bounds).toEqual({ minX: 3, minY: -2, maxX: 7, maxY: 2 })
+    expect(isGridPointInsideSelection({ x: 4, y: 1 }, moved.selection)).toBe(true)
+    expect(isGridPointInsideSelection({ x: 2, y: 1 }, moved.selection)).toBe(false)
   })
 })

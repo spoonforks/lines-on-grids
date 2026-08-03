@@ -135,6 +135,39 @@ export function transformSelectedContent(
   }
 }
 
+export function translateSelectedContent(
+  documentState: DrawingDocument,
+  selection: ContentSelection,
+  offset: GridPoint,
+): { document: DrawingDocument; selection: ContentSelection } {
+  if (offset.x === 0 && offset.y === 0) return { document: documentState, selection }
+  const strokeIds = new Set(selection.strokeIds)
+  const fillIds = new Set(selection.fillIds)
+  const strokes = documentState.strokes.map((stroke) => strokeIds.has(stroke.id)
+    ? {
+        ...stroke,
+        points: stroke.points.map((point) => ({ x: point.x + offset.x, y: point.y + offset.y })),
+      }
+    : stroke)
+  const fills = documentState.fills.map((fill) => fillIds.has(fill.id)
+    ? {
+        ...fill,
+        seed: {
+          x: fill.seed.x + offset.x * documentState.grid.spacing,
+          y: fill.seed.y + offset.y * documentState.grid.spacing,
+        },
+      }
+    : fill)
+  return {
+    document: { ...documentState, strokes, fills },
+    selection: { ...selection, bounds: translateBounds(selection.bounds, offset) },
+  }
+}
+
+export function isGridPointInsideSelection(point: GridPoint, selection: ContentSelection) {
+  return pointInsideBounds(point, selection.bounds)
+}
+
 function strokeIntersectsBounds(stroke: Stroke, bounds: GridSelectionBounds) {
   let minX = Number.POSITIVE_INFINITY
   let minY = Number.POSITIVE_INFINITY

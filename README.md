@@ -7,17 +7,23 @@ A browser app for making line art on a dot grid.
 Artwork created with Lines on Grids
 
 <p align="center">
-  <img src="Examples/lines-on-grid-2026-07-16T00-46-36-214Z.png" width="48%" alt="Colorful symmetrical maze artwork made with Lines on Grids">
-  <img src="Examples/lines-on-grid-2026-07-16T01-12-17-962Z.png" width="48%" alt="Organic geometric artwork made with Lines on Grids">
+  <img src="Examples/1.png" width="72%" alt="A collection of four colorful geometric grid artworks made with Lines on Grids">
 </p>
 <p align="center">
-  <img src="Examples/lines-on-grid-2026-07-16T01-22-23-717Z.png" width="68%" alt="Blue, pink, black, and white symmetrical artwork made with Lines on Grids">
+  <img src="Examples/2.png" width="48%" alt="A colorful architectural speaker illustration made with Lines on Grids">
+  <img src="Examples/3.png" width="48%" alt="A colorful interlocking geometric tile artwork made with Lines on Grids">
+</p>
+<p align="center">
+  <img src="Examples/4.png" width="48%" alt="An abstract red, gold, blue, and pink line artwork made with Lines on Grids">
+  <img src="Examples/5.png" width="48%" alt="A blue and pink symmetrical line artwork made with Lines on Grids">
 </p>
 
 ## Tools
 
 - Grid pen (`B`) — builds orthogonal and 45° paths; hold `Alt` for direct segments
 - Curve pen (`C`) — creates rounded grid-aligned transitions
+- Shape (`U`) — places grid-sized squares, circles, diamonds, and triangles
+- Select (`M`) — selects a grid rectangle for moving, copying, pasting, rotating, or flipping artwork
 - Eraser (`E`) — cuts geometry on the active layer
 - Fill (`G`) — fills enclosed regions or changes the background
 - Pattern fill (`K`) — fills a region with ordered dither, diagonal, crosshatch, or stipple presets
@@ -27,13 +33,15 @@ Artwork created with Lines on Grids
 
 Right-click or press `Enter` to commit a path. Press `Escape` to cancel, `[` / `]` to change tool size, and `Ctrl/Cmd+Z` to undo. Use the Hand tool or hold `Space` and drag to pan.
 
-The Grid Pen and Curve Pen include independent **Mirror X** and **Mirror Y** toggles. X mirrors left/right across the document center, Y mirrors top/bottom, and enabling both produces four-way symmetry. All mirrored copies preview live and commit as one undoable action.
+Drawing, shapes, and fills include independent **Mirror X** and **Mirror Y** toggles. X mirrors left/right across the document center, Y mirrors top/bottom, and enabling both produces four-way symmetry. Mirrored geometry previews live and commits as one undoable action.
 
 ## Layers
 
 Layers follow a familiar image-editor model: the active layer receives new artwork, and every layer can be renamed, reordered, hidden, locked, duplicated, cleared, deleted, and assigned an opacity. The background remains separate and locked.
 
-Documents autosave locally. A larger IndexedDB recovery store keeps the latest and previous snapshots, including an unfinished active path, while small documents also retain a local-storage fallback. Long paths checkpoint automatically before they can exhaust browser memory. Use **Save JSON** for a portable editable copy and **Export PNG** for finished artwork.
+Documents autosave locally. A larger IndexedDB recovery store keeps the latest and previous snapshots, including an unfinished active path, while small documents also retain a local-storage fallback. Long paths checkpoint automatically before they can exhaust browser memory. New drawings can be named and sized at startup, and saved JSON documents can be imported there later.
+
+The visual export dialog previews a grid-snapped crop before saving. Finished artwork can be exported as PNG or SVG with either the document background or transparency, using the drawing name for the file.
 
 ## Development
 

@@ -152,6 +152,7 @@
 .active-path-layer { z-index: 2; }
 .overlay-layer { z-index: 3; touch-action: none; }
 .cursor-draw, .cursor-curve, .cursor-shape, .cursor-select { cursor: crosshair; }
+.cursor-move { cursor: move; }
 .cursor-erase { cursor: cell; }
 .cursor-bucket { cursor: copy; }
 .cursor-patternBucket { cursor: copy; }
