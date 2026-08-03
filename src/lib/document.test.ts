@@ -153,6 +153,7 @@ describe('document utilities', () => {
     const parsed = JSON.parse(serialized)
 
     expect(parsed.version).toBe(5)
+    expect(parsed.name).toBe('Untitled grid')
     expect(parsed.grid).toEqual({ spacing: 30 })
     expect(parsed.canvas).toEqual({ width: 800, height: 600 })
     expect(parsed.backgroundColor).toBe(DEFAULT_BACKGROUND_COLOR)
@@ -170,13 +171,19 @@ describe('document utilities', () => {
   })
 
   it('imports validated document JSON and recovery snapshots', () => {
-    const initial = addFill(createDocument(30, { width: 800, height: 600 }, '#fefefe'), {
+    const initial = addFill(createDocument(30, { width: 800, height: 600 }, '#fefefe', 'Blue study'), {
       color: '#fedcba',
       seed: { x: 40, y: 60 },
     })
 
     expect(parseDocumentJson(serializeDocument(initial))).toEqual(initial)
     expect(parseDocumentJson(JSON.stringify({ savedAt: Date.now(), document: initial }))).toEqual(initial)
+  })
+
+  it('adds a safe default name when importing older version-5 documents', () => {
+    const olderDocument = createDocument(28, { width: 640, height: 480 })
+    const { name: _name, ...withoutName } = olderDocument
+    expect(parseDocumentJson(JSON.stringify(withoutName)).name).toBe('Untitled grid')
   })
 
   it('rejects malformed imported documents', () => {

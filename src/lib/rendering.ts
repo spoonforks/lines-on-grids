@@ -113,9 +113,31 @@ export function drawOverlay(
     preferDiagonalPreview: boolean
     mirrorX: boolean
     mirrorY: boolean
+    selectionBounds: { minX: number; minY: number; maxX: number; maxY: number } | null
   },
 ) {
   context.clearRect(0, 0, size.width, size.height)
+
+  if (options.selectionBounds) {
+    const start = worldPointToScreenPoint(
+      gridPointToWorldPoint({ x: options.selectionBounds.minX, y: options.selectionBounds.minY }, metrics),
+      size,
+      viewport,
+    )
+    const end = worldPointToScreenPoint(
+      gridPointToWorldPoint({ x: options.selectionBounds.maxX, y: options.selectionBounds.maxY }, metrics),
+      size,
+      viewport,
+    )
+    context.save()
+    context.fillStyle = 'rgba(73, 133, 232, 0.08)'
+    context.strokeStyle = 'rgba(84, 146, 255, 0.95)'
+    context.lineWidth = 1
+    context.setLineDash([5, 4])
+    context.fillRect(start.x, start.y, end.x - start.x, end.y - start.y)
+    context.strokeRect(start.x + 0.5, start.y + 0.5, end.x - start.x, end.y - start.y)
+    context.restore()
+  }
 
   if (options.hoveredStroke) {
     drawStroke(context, size, metrics, viewport, options.hoveredStroke, {
@@ -212,8 +234,9 @@ export function renderExportedDrawing(
   metrics: GridMetrics,
   viewport: ViewportState,
   documentState: DrawingDocument,
+  options?: { transparentBackground?: boolean },
 ) {
-  const raster = createSceneRaster(canvasSize, metrics, viewport, documentState)
+  const raster = createSceneRaster(canvasSize, metrics, viewport, documentState, options?.transparentBackground)
   context.drawImage(raster.canvas, 0, 0)
 }
 
@@ -374,11 +397,14 @@ function createSceneRaster(
   metrics: GridMetrics,
   viewport: ViewportState,
   documentState: DrawingDocument,
+  transparentBackground = false,
 ) {
   const raster = createRasterContext(size)
   raster.context.clearRect(0, 0, size.width, size.height)
-  raster.context.fillStyle = documentState.backgroundColor
-  raster.context.fillRect(0, 0, size.width, size.height)
+  if (!transparentBackground) {
+    raster.context.fillStyle = documentState.backgroundColor
+    raster.context.fillRect(0, 0, size.width, size.height)
+  }
 
   const strokesByLayer = new Map<string, Stroke[]>()
   const fillsByLayer = new Map<string, DrawingDocument['fills']>()

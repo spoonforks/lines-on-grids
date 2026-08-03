@@ -17,6 +17,10 @@ export interface ExportMargins {
   left: number
 }
 
+export interface DrawingExportOptions {
+  transparentBackground: boolean
+}
+
 export function downloadDocumentJson(documentState: DrawingDocument, fileName: string) {
   const blob = new Blob([serializeDocument(documentState)], { type: 'application/json' })
   downloadBlob(blob, fileName)
@@ -26,8 +30,9 @@ export function downloadDrawingPng(
   documentState: DrawingDocument,
   fileName: string,
   bounds: GridExportBounds,
+  options: DrawingExportOptions,
 ) {
-  const canvas = createExportCanvas(documentState, bounds, 2)
+  const canvas = createExportCanvas(documentState, bounds, 2, options)
 
   canvas.toBlob((blob) => {
     if (!blob) {
@@ -38,15 +43,20 @@ export function downloadDrawingPng(
   }, 'image/png')
 }
 
-export function downloadDrawingSvg(documentState: DrawingDocument, fileName: string, bounds: GridExportBounds) {
-  const canvas = createExportCanvas(documentState, bounds, 2)
+export function downloadDrawingSvg(
+  documentState: DrawingDocument,
+  fileName: string,
+  bounds: GridExportBounds,
+  options: DrawingExportOptions,
+) {
+  const canvas = createExportCanvas(documentState, bounds, 2, options)
   const width = canvas.width / 2
   const height = canvas.height / 2
   const pngDataUrl = canvas.toDataURL('image/png')
   const svg = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
-    '  <title>Lines on Grids artwork</title>',
+    `  <title>${escapeXml(documentState.name)}</title>`,
     `  <image width="${width}" height="${height}" href="${pngDataUrl}" preserveAspectRatio="none"/>`,
     '</svg>',
   ].join('\n')
@@ -108,6 +118,52 @@ export function getTimestampedFilename(prefix: string, extension: string) {
   return `${prefix}-${timestamp}.${extension}`
 }
 
+export function getDocumentFilename(name: string, extension: string) {
+  const safeName = name.trim().split('').map((character) => {
+    return character.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(character) ? '-' : character
+  }).join('').replace(/\s+/g, ' ').replace(/[. ]+$/g, '') || 'Untitled grid'
+  return `${safeName}.${extension}`
+}
+
+export function expandExportBounds(bounds: GridExportBounds, cells: number): GridExportBounds {
+  return {
+    minX: bounds.minX - cells,
+    minY: bounds.minY - cells,
+    maxX: bounds.maxX + cells,
+    maxY: bounds.maxY + cells,
+  }
+}
+
+export function getExportPreviewSize(bounds: GridExportBounds, maximumWidth = 760, maximumHeight = 420) {
+  const width = Math.max(1, bounds.maxX - bounds.minX)
+  const height = Math.max(1, bounds.maxY - bounds.minY)
+  const scale = Math.min(maximumWidth / width, maximumHeight / height)
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  }
+}
+
+export function renderExportPreview(
+  canvas: HTMLCanvasElement,
+  documentState: DrawingDocument,
+  bounds: GridExportBounds,
+  options: DrawingExportOptions,
+) {
+  const size = getExportPreviewSize(bounds)
+  const pixelRatio = window.devicePixelRatio || 1
+  canvas.width = Math.round(size.width * pixelRatio)
+  canvas.height = Math.round(size.height * pixelRatio)
+  canvas.style.width = `${size.width}px`
+  canvas.style.height = `${size.height}px`
+  const context = canvas.getContext('2d')
+  if (!context) throw new Error('Unable to create a 2D canvas context.')
+  context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+  context.clearRect(0, 0, size.width, size.height)
+  renderDrawingInBounds(context, size, documentState, bounds, options)
+  return size
+}
+
 function downloadBlob(blob: Blob, fileName: string) {
   const objectUrl = URL.createObjectURL(blob)
   const link = document.createElement('a')
@@ -117,7 +173,12 @@ function downloadBlob(blob: Blob, fileName: string) {
   URL.revokeObjectURL(objectUrl)
 }
 
-function createExportCanvas(documentState: DrawingDocument, bounds: GridExportBounds, exportScale: number) {
+function createExportCanvas(
+  documentState: DrawingDocument,
+  bounds: GridExportBounds,
+  exportScale: number,
+  options: DrawingExportOptions,
+) {
   const size = getExportPixelSize(documentState, bounds)
   const scaledWidth = size.width * exportScale
   const scaledHeight = size.height * exportScale
@@ -131,7 +192,20 @@ function createExportCanvas(documentState: DrawingDocument, bounds: GridExportBo
   if (!context) throw new Error('Unable to create a 2D canvas context.')
 
   context.setTransform(exportScale, 0, 0, exportScale, 0, 0)
+  renderDrawingInBounds(context, size, documentState, bounds, options)
+  return canvas
+}
+
+function renderDrawingInBounds(
+  context: CanvasRenderingContext2D,
+  size: { width: number; height: number },
+  documentState: DrawingDocument,
+  bounds: GridExportBounds,
+  options: DrawingExportOptions,
+) {
   const spacing = documentState.grid.spacing
+  const worldWidth = Math.max(spacing, (bounds.maxX - bounds.minX) * spacing)
+  const worldHeight = Math.max(spacing, (bounds.maxY - bounds.minY) * spacing)
   renderExportedDrawing(
     context,
     size,
@@ -139,9 +213,13 @@ function createExportCanvas(documentState: DrawingDocument, bounds: GridExportBo
     {
       x: ((bounds.minX + bounds.maxX) / 2) * spacing,
       y: ((bounds.minY + bounds.maxY) / 2) * spacing,
-      zoom: 1,
+      zoom: Math.min(size.width / worldWidth, size.height / worldHeight),
     },
     documentState,
+    options,
   )
-  return canvas
+}
+
+function escapeXml(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character] ?? character)
 }

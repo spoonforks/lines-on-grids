@@ -8,6 +8,7 @@ import { SettingsDialog } from './components/SettingsDialog'
 import { normalizeHexColor } from './lib/color'
 import {
   DEFAULT_BACKGROUND_COLOR,
+  DEFAULT_DOCUMENT_NAME,
   addFill,
   addFillWithMirrors,
   addLayer,
@@ -29,9 +30,9 @@ import {
   downloadDrawingPng,
   downloadDrawingSvg,
   getArtworkGridBounds,
-  getTimestampedFilename,
+  getDocumentFilename,
 } from './lib/export'
-import type { GridExportBounds } from './lib/export'
+import type { DrawingExportOptions, GridExportBounds } from './lib/export'
 import {
   appendSegmentPoints,
   getGridMetrics,
@@ -44,6 +45,14 @@ import { loadRecoverySnapshot, saveRecoverySnapshot } from './lib/persistence'
 import type { RecoverySnapshot } from './lib/persistence'
 import { loadPreferences, savePreferences } from './lib/preferences'
 import { createShapePoints, MAX_SHAPE_SIZE, MIN_SHAPE_SIZE, normalizeShapeSize, SHAPE_SIZE_STEP } from './lib/shapes'
+import {
+  copySelectedContent,
+  normalizeSelectionBounds,
+  pasteSelectedContent,
+  selectContentInBounds,
+  transformSelectedContent,
+} from './lib/selection'
+import type { ContentSelection, SelectionClipboard, SelectionTransform } from './lib/selection'
 import {
   configureCanvas,
   drawActiveStrokeLayer,
@@ -59,6 +68,7 @@ import type {
   CanvasSize,
   DitherPattern,
   DrawingDocument,
+  GridPoint,
   ShapeMode,
   Stroke,
   StrokeDraft,
@@ -92,6 +102,7 @@ function App() {
   const redoLatestActionRef = useRef<() => void>(() => undefined)
   const previewDocumentRef = useRef<DrawingDocument | null>(null)
   const eraseSessionRef = useRef<{ pointerId: number } | null>(null)
+  const selectionSessionRef = useRef<{ pointerId: number; start: GridPoint; end: GridPoint } | null>(null)
   const panStateRef = useRef<{
     pointerId: number
     startX: number
@@ -132,6 +143,9 @@ function App() {
   const [preferences, setPreferences] = useState(loadPreferences)
   const [hasRecovery, setHasRecovery] = useState(initialSavedAtRef.current > 0)
   const [draftSpacing, setDraftSpacing] = useState(DEFAULT_GRID_SPACING)
+  const [draftName, setDraftName] = useState(DEFAULT_DOCUMENT_NAME)
+  const [selection, setSelection] = useState<ContentSelection | null>(null)
+  const [selectionClipboard, setSelectionClipboard] = useState<SelectionClipboard | null>(null)
   const [isAltPressed, setIsAltPressed] = useState(false)
   const [isSpacePressed, setIsSpacePressed] = useState(false)
   const [showGridDots, setShowGridDots] = useState(true)
@@ -170,6 +184,7 @@ function App() {
   const canRedo = history.future.length > 0
   const hasVisibleArtwork = documentState.strokes.length > 0 || documentState.fills.length > 0 || documentState.backgroundColor !== DEFAULT_BACKGROUND_COLOR
   const canEditLayer = Boolean(activeLayer?.visible && !activeLayer.locked)
+  const selectedItemCount = (selection?.strokeIds.length ?? 0) + (selection?.fillIds.length ?? 0)
   const cursorTool = isSpacePressed ? 'hand' : toolState.selectedTool
   const documentColors = useMemo(() => {
     const colors: string[] = []
@@ -210,7 +225,8 @@ function App() {
     loadRecoverySnapshot().then((snapshot) => {
       if (cancelled) return
       if (snapshot && snapshot.savedAt > initialSavedAtRef.current) {
-        setHistory((current) => current.past.length > 0 ? current : createHistory(snapshot.document))
+        const recoveredDocument = syncDocumentCanvas(snapshot.document, snapshot.document.canvas)
+        setHistory((current) => current.past.length > 0 ? current : createHistory(recoveredDocument))
         setToolState((current) => ({
           ...current,
           activeStroke: snapshot.activeStroke ?? null,
@@ -330,13 +346,16 @@ function App() {
       preferDiagonalPreview: toolState.selectedTool === 'draw' && isAltPressed,
       mirrorX: toolState.mirrorX,
       mirrorY: toolState.mirrorY,
+      selectionBounds: selection?.bounds ?? null,
     })
-  }, [activeLayer?.id, canvasSize, gridMetrics, hoveredStroke, isAltPressed, pickerPoint, shapePreview, toolState.activeStroke, toolState.hoverPoint, toolState.mirrorX, toolState.mirrorY, toolState.selectedTool, viewport])
+  }, [activeLayer?.id, canvasSize, gridMetrics, hoveredStroke, isAltPressed, pickerPoint, selection?.bounds, shapePreview, toolState.activeStroke, toolState.hoverPoint, toolState.mirrorX, toolState.mirrorY, toolState.selectedTool, viewport])
 
   const resetTransientState = () => {
     previewDocumentRef.current = null
     setPreviewDocument(null)
     eraseSessionRef.current = null
+    selectionSessionRef.current = null
+    setSelection(null)
     setPickerPoint(null)
     setToolState((current) => ({ ...current, activeStroke: null, hoverPoint: null, hoveredStrokeId: null }))
   }
@@ -361,6 +380,39 @@ function App() {
     resetTransientState()
     setHistory((value) => redoHistory(value))
     setNotice('Redo')
+  }
+
+  const handleCopySelection = () => {
+    if (!selection) return
+    const copied = copySelectedContent(persistedDocument, selection)
+    if (!copied) {
+      setNotice('The selection does not contain editable items')
+      return
+    }
+    setSelectionClipboard(copied)
+    const itemCount = copied.strokes.length + copied.fills.length
+    setNotice(`${itemCount} ${itemCount === 1 ? 'item' : 'items'} copied`)
+  }
+
+  const handlePasteSelection = () => {
+    if (!selectionClipboard || !canEditLayer) return
+    const result = pasteSelectedContent(syncDocumentCanvas(history.present, canvasSize), selectionClipboard)
+    resetTransientState()
+    setHistory((value) => pushHistory(value, result.document))
+    setSelection(result.selection)
+    setToolState((current) => ({ ...current, selectedTool: 'select' }))
+    const itemCount = result.selection.strokeIds.length + result.selection.fillIds.length
+    setNotice(`${itemCount} ${itemCount === 1 ? 'item' : 'items'} pasted`)
+  }
+
+  const handleTransformSelection = (transform: SelectionTransform) => {
+    if (!selection || !canEditLayer || selection.strokeIds.length + selection.fillIds.length === 0) return
+    const result = transformSelectedContent(syncDocumentCanvas(history.present, canvasSize), selection, transform)
+    previewDocumentRef.current = null
+    setPreviewDocument(null)
+    setHistory((value) => pushHistory(value, result.document))
+    setSelection(result.selection)
+    setNotice(transform === 'rotate90' ? 'Selection rotated 90°' : transform === 'flipHorizontal' ? 'Selection flipped horizontally' : 'Selection flipped vertically')
   }
 
   finishActivePathRef.current = finishActivePath
@@ -389,6 +441,16 @@ function App() {
       if (event.key === 'Enter') {
         event.preventDefault()
         finishActivePathRef.current()
+        return
+      }
+      if (modifier && key === 'c') {
+        event.preventDefault()
+        handleCopySelection()
+        return
+      }
+      if (modifier && key === 'v') {
+        event.preventDefault()
+        handlePasteSelection()
         return
       }
       if (modifier && key === 'z' && !event.shiftKey) {
@@ -456,6 +518,13 @@ function App() {
       eraseAtCanvasPoint(point.x, point.y)
       return
     }
+    if (selectionSessionRef.current?.pointerId === event.pointerId) {
+      const end = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
+      if (!end) return
+      selectionSessionRef.current.end = end
+      setSelection({ bounds: normalizeSelectionBounds(selectionSessionRef.current.start, end), strokeIds: [], fillIds: [] })
+      return
+    }
     const visibleStroke = findStrokeAtCanvasPoint(visibleStrokes, gridMetrics, canvasSize, viewport, point)
     if (toolState.selectedTool === 'erase') {
       const stroke = findStrokeAtCanvasPoint(activeLayerStrokes, gridMetrics, canvasSize, viewport, point)
@@ -483,7 +552,7 @@ function App() {
   }
 
   const handlePointerLeave = () => {
-    if (eraseSessionRef.current || panStateRef.current) return
+    if (eraseSessionRef.current || panStateRef.current || selectionSessionRef.current) return
     setPickerPoint(null)
     setToolState((current) => ({ ...current, hoverPoint: null, hoveredStrokeId: null }))
   }
@@ -513,6 +582,14 @@ function App() {
     }
     if (!canEditLayer) {
       setNotice(activeLayer?.locked ? 'Unlock the active layer to edit it' : 'Show the active layer to edit it')
+      return
+    }
+    if (toolState.selectedTool === 'select') {
+      const start = snapScreenPointToGrid(point.x, point.y, canvasSize, viewport, gridMetrics)
+      if (!start) return
+      selectionSessionRef.current = { pointerId: event.pointerId, start, end: start }
+      setSelection({ bounds: normalizeSelectionBounds(start, start), strokeIds: [], fillIds: [] })
+      setNotice('Drag to select on the grid')
       return
     }
     if (toolState.selectedTool === 'erase') {
@@ -592,6 +669,14 @@ function App() {
 
   const finishPointerSession = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (panStateRef.current?.pointerId === event.pointerId) panStateRef.current = null
+    if (selectionSessionRef.current?.pointerId === event.pointerId) {
+      const session = selectionSessionRef.current
+      selectionSessionRef.current = null
+      const nextSelection = selectContentInBounds(documentState, normalizeSelectionBounds(session.start, session.end))
+      setSelection(nextSelection)
+      const itemCount = nextSelection.strokeIds.length + nextSelection.fillIds.length
+      setNotice(itemCount === 0 ? 'Empty selection' : `${itemCount} ${itemCount === 1 ? 'item' : 'items'} selected`)
+    }
     if (eraseSessionRef.current?.pointerId === event.pointerId) {
       eraseSessionRef.current = null
       const preview = previewDocumentRef.current
@@ -642,7 +727,7 @@ function App() {
     setDraftSpacing(spacing)
     setViewport({ x: 0, y: 0, zoom: 1 })
     resetTransientState()
-    setHistory(createHistory(createDocument(spacing, canvasSize, preferences.canvasBackgroundColor)))
+    setHistory(createHistory(createDocument(spacing, canvasSize, preferences.canvasBackgroundColor, draftName)))
     setHasRecovery(true)
     setImportError(null)
     setIsStartupDialog(false)
@@ -662,6 +747,7 @@ function App() {
       resetTransientState()
       setHistory(createHistory(imported))
       setDraftSpacing(imported.grid.spacing)
+      setDraftName(imported.name)
       setHasRecovery(true)
       setIsStartupDialog(false)
       setIsDialogOpen(false)
@@ -673,6 +759,7 @@ function App() {
 
   const openDocumentDialog = () => {
     setDraftSpacing(documentState.grid.spacing)
+    setDraftName(documentState.name)
     setImportError(null)
     setIsStartupDialog(false)
     setIsDialogOpen(true)
@@ -680,21 +767,21 @@ function App() {
 
   const fitToScreen = () => setViewport({ x: 0, y: 0, zoom: 1 })
   const exportJson = () => {
-    downloadDocumentJson(exportableDocument, getTimestampedFilename('lines-on-grid', 'json'))
+    downloadDocumentJson(exportableDocument, getDocumentFilename(exportableDocument.name, 'json'))
     setNotice('JSON backup saved')
   }
-  const exportPng = (bounds: GridExportBounds) => {
+  const exportPng = (bounds: GridExportBounds, options: DrawingExportOptions) => {
     try {
-      downloadDrawingPng(exportableDocument, getTimestampedFilename('lines-on-grid', 'png'), bounds)
+      downloadDrawingPng(exportableDocument, getDocumentFilename(exportableDocument.name, 'png'), bounds, options)
       setIsExportOpen(false)
       setNotice('PNG export created')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'PNG export failed')
     }
   }
-  const exportSvg = (bounds: GridExportBounds) => {
+  const exportSvg = (bounds: GridExportBounds, options: DrawingExportOptions) => {
     try {
-      downloadDrawingSvg(exportableDocument, getTimestampedFilename('lines-on-grid', 'svg'), bounds)
+      downloadDrawingSvg(exportableDocument, getDocumentFilename(exportableDocument.name, 'svg'), bounds, options)
       setIsExportOpen(false)
       setNotice('SVG export created')
     } catch (error) {
@@ -706,7 +793,7 @@ function App() {
     <main className="app-shell">
       <header className="app-header">
         <div className="brand-mark" aria-hidden="true">LG</div>
-        <div className="document-title"><strong>Untitled grid</strong><span>Lines on Grids</span></div>
+        <div className="document-title"><strong>{documentState.name}</strong><span>Lines on Grids</span></div>
         <nav className="header-actions" aria-label="Document actions">
           <button type="button" onClick={openDocumentDialog}>New / Open</button>
           <span className="toolbar-divider" />
@@ -721,12 +808,25 @@ function App() {
 
       <section className="options-bar" aria-label="Tool options">
         <div className="active-tool-name"><ToolIcon name={toolState.selectedTool} /><span>{TOOL_OPTIONS.find((tool) => tool.id === toolState.selectedTool)?.label}</span></div>
-        <span className="toolbar-divider" />
-        <label className="color-control" title="Foreground color">
-          <span>Color</span>
-          <input type="color" value={toolState.color} onChange={(event) => setToolState((current) => ({ ...current, color: event.target.value }))} />
-          <code>{toolState.color.toUpperCase()}</code>
-        </label>
+        {!['select', 'hand', 'zoom'].includes(toolState.selectedTool) ? <>
+          <span className="toolbar-divider" />
+          <label className="color-control" title="Foreground color">
+            <span>Color</span>
+            <input type="color" value={toolState.color} onChange={(event) => setToolState((current) => ({ ...current, color: event.target.value }))} />
+            <code>{toolState.color.toUpperCase()}</code>
+          </label>
+        </> : null}
+        {toolState.selectedTool === 'select' ? <>
+          <span className="toolbar-divider" />
+          <div className="selection-options" aria-label="Selection actions">
+            <span>{selectedItemCount} selected</span>
+            <button type="button" onClick={handleCopySelection} disabled={selectedItemCount === 0}>Copy</button>
+            <button type="button" onClick={handlePasteSelection} disabled={!selectionClipboard}>Paste</button>
+            <button type="button" onClick={() => handleTransformSelection('rotate90')} disabled={selectedItemCount === 0}>Rotate 90°</button>
+            <button type="button" onClick={() => handleTransformSelection('flipHorizontal')} disabled={selectedItemCount === 0}>Flip H</button>
+            <button type="button" onClick={() => handleTransformSelection('flipVertical')} disabled={selectedItemCount === 0}>Flip V</button>
+          </div>
+        </> : null}
         {['draw', 'curve', 'shape', 'erase'].includes(toolState.selectedTool) ? <>
           <span className="toolbar-divider" />
           <label className="width-control">
@@ -770,7 +870,7 @@ function App() {
             ))}
           </div>
         </> : null}
-        <span className="options-hint">{['draw', 'curve'].includes(toolState.selectedTool) ? 'Click dots to build a path · Right-click or Enter to finish · Alt for direct segments' : toolState.selectedTool === 'shape' ? 'Click a grid point to place the shape' : toolState.selectedTool === 'patternBucket' ? 'Choose a preset, then click a region or the open canvas to apply the pattern' : 'Space-drag to pan · Mouse wheel to zoom'}</span>
+        <span className="options-hint">{['draw', 'curve'].includes(toolState.selectedTool) ? 'Click dots to build a path · Right-click or Enter to finish · Alt for direct segments' : toolState.selectedTool === 'shape' ? 'Click a grid point to place the shape' : toolState.selectedTool === 'select' ? 'Drag a grid rectangle around paths and fills · Ctrl/Cmd+C and Ctrl/Cmd+V' : toolState.selectedTool === 'patternBucket' ? 'Choose a preset, then click a region or the open canvas to apply the pattern' : 'Space-drag to pan · Mouse wheel to zoom'}</span>
       </section>
 
       <aside className="tool-dock" aria-label="Tools">
@@ -866,9 +966,11 @@ function App() {
       <NewDrawingDialog
         isOpen={isDialogOpen}
         spacing={draftSpacing}
+        name={draftName}
         minSpacing={MIN_GRID_SPACING}
         maxSpacing={MAX_GRID_SPACING}
         onSpacingChange={setDraftSpacing}
+        onNameChange={setDraftName}
         onConfirm={handleCreateDrawing}
         onClose={() => { setImportError(null); setIsDialogOpen(false) }}
         onImport={handleImportDrawing}
@@ -983,7 +1085,7 @@ function loadLocalSnapshot(): RecoverySnapshot {
     const parsed = JSON.parse(stored) as DrawingDocument | RecoverySnapshot
     const snapshot = 'document' in parsed ? parsed : { savedAt: 0, document: parsed }
     if (snapshot.document.version !== 5 || !Array.isArray(snapshot.document.layers) || !snapshot.document.layers.length) throw new Error('Invalid document')
-    return snapshot
+    return { ...snapshot, document: syncDocumentCanvas(snapshot.document, snapshot.document.canvas) }
   } catch {
     return { savedAt: 0, document: createDocument(DEFAULT_GRID_SPACING, DEFAULT_CANVAS_SIZE) }
   }
@@ -1010,6 +1112,7 @@ const TOOL_OPTIONS: Array<{ id: ToolMode; label: string; shortcut: string }> = [
   { id: 'draw', label: 'Grid pen', shortcut: 'B' },
   { id: 'curve', label: 'Curve pen', shortcut: 'C' },
   { id: 'shape', label: 'Shape', shortcut: 'U' },
+  { id: 'select', label: 'Select', shortcut: 'M' },
   { id: 'erase', label: 'Eraser', shortcut: 'E' },
   { id: 'bucket', label: 'Fill', shortcut: 'G' },
   { id: 'patternBucket', label: 'Pattern fill', shortcut: 'K' },
@@ -1023,6 +1126,7 @@ function ToolIcon({ name }: { name: ToolMode }) {
     draw: <><path d="m5 19 3.5-.8L19 7.7 16.3 5 5.8 15.5 5 19Z"/><path d="m14.8 6.5 2.7 2.7"/></>,
     curve: <><path d="M5 18c0-7 3-12 9-12h4"/><circle cx="5" cy="18" r="1.5"/><circle cx="18" cy="6" r="1.5"/></>,
     shape: <><rect x="4.5" y="4.5" width="10" height="10" rx=".5"/><circle cx="15.5" cy="15.5" r="4"/></>,
+    select: <><rect x="4" y="4" width="16" height="16" rx="1" strokeDasharray="3 2"/><path d="m14 13 6 6M14 19l6-6"/></>,
     erase: <><path d="m7 17-3-3 8-9 6 6-6 7H8l-1-1Z"/><path d="m9.5 8 6 6M11 18h8"/></>,
     bucket: <><path d="m5 12 7-7 7 7-7 7-7-7Z"/><path d="M7.5 9.5h9M18.5 16.5s1.5 1.4 1.5 2.3a1.5 1.5 0 0 1-3 0c0-.9 1.5-2.3 1.5-2.3Z"/></>,
     patternBucket: <><path d="m5 11 7-7 7 7-7 7-7-7Z"/><circle cx="8" cy="11" r=".65"/><circle cx="11" cy="14" r=".65"/><circle cx="14" cy="11" r=".65"/><path d="M19 16s1.5 1.4 1.5 2.3a1.5 1.5 0 0 1-3 0C17.5 17.4 19 16 19 16Z"/></>,
