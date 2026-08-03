@@ -6,7 +6,7 @@ export interface GridPoint {
 export type BrushMode = 'auto' | 'curve'
 export type DitherPattern = 'bayer25' | 'bayer50' | 'bayer75' | 'diagonal' | 'crosshatch' | 'stipple'
 export type ShapeMode = 'square' | 'circle' | 'diamond' | 'triangle'
-export type ToolMode = 'draw' | 'curve' | 'shape' | 'erase' | 'bucket' | 'patternBucket' | 'picker' | 'hand' | 'zoom'
+export type ToolMode = 'draw' | 'curve' | 'shape' | 'select' | 'erase' | 'bucket' | 'patternBucket' | 'picker' | 'hand' | 'zoom'
 
 export interface WorldPoint {
   x: number
@@ -60,6 +60,7 @@ export interface DrawingLayer {
 
 export interface DrawingDocument {
   version: 5
+  name: string
   grid: GridSettings
   canvas: CanvasSize
   backgroundColor: string

@@ -3,9 +3,11 @@ import { useEffect, useState } from 'react'
 interface NewDrawingDialogProps {
   isOpen: boolean
   spacing: number
+  name: string
   minSpacing: number
   maxSpacing: number
   onSpacingChange: (spacing: number) => void
+  onNameChange: (name: string) => void
   onConfirm: (spacing: number) => void
   onClose: () => void
   onImport: (file: File) => void
@@ -17,9 +19,11 @@ interface NewDrawingDialogProps {
 export function NewDrawingDialog({
   isOpen,
   spacing,
+  name,
   minSpacing,
   maxSpacing,
   onSpacingChange,
+  onNameChange,
   onConfirm,
   onClose,
   onImport,
@@ -66,6 +70,10 @@ export function NewDrawingDialog({
 
         <div className="dialog-field new-document-field">
           <strong>New drawing</strong>
+          <label className="document-name-field">
+            <span>Drawing name</span>
+            <input aria-label="Drawing name" type="text" maxLength={80} value={name} onChange={(event) => onNameChange(event.target.value)} placeholder="Untitled grid" />
+          </label>
           <label htmlFor="grid-spacing-range">
             <span>Grid spacing</span>
             <strong>{spacing}px</strong>

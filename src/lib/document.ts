@@ -5,10 +5,17 @@ import { normalizeHexColor } from './color'
 const DOCUMENT_VERSION = 5 as const
 const INITIAL_LAYER_ID = 'layer-1'
 export const DEFAULT_BACKGROUND_COLOR = '#ffffff'
+export const DEFAULT_DOCUMENT_NAME = 'Untitled grid'
 
-export function createDocument(spacing: number, canvas: CanvasSize, backgroundColor = DEFAULT_BACKGROUND_COLOR): DrawingDocument {
+export function createDocument(
+  spacing: number,
+  canvas: CanvasSize,
+  backgroundColor = DEFAULT_BACKGROUND_COLOR,
+  name = DEFAULT_DOCUMENT_NAME,
+): DrawingDocument {
   return {
     version: DOCUMENT_VERSION,
+    name: normalizeDocumentName(name),
     grid: {
       spacing: Math.round(spacing),
     },
@@ -24,13 +31,15 @@ export function createDocument(spacing: number, canvas: CanvasSize, backgroundCo
 export function syncDocumentCanvas(documentState: DrawingDocument, canvas: CanvasSize): DrawingDocument {
   if (
     documentState.canvas.width === canvas.width &&
-    documentState.canvas.height === canvas.height
+    documentState.canvas.height === canvas.height &&
+    documentState.name
   ) {
     return documentState
   }
 
   return {
     ...documentState,
+    name: normalizeDocumentName(documentState.name),
     canvas,
   }
 }
@@ -393,6 +402,7 @@ export function parseDocumentJson(json: string): DrawingDocument {
     : layers[0].id
   return {
     version: DOCUMENT_VERSION,
+    name: typeof candidate.name === 'string' ? normalizeDocumentName(candidate.name) : DEFAULT_DOCUMENT_NAME,
     grid: { spacing: clampNumber(candidate.grid.spacing, 8, 256, 28) },
     canvas: {
       width: clampNumber(candidate.canvas.width, 1, 100_000, 1200),
@@ -410,6 +420,13 @@ export function parseDocumentJson(json: string): DrawingDocument {
 
 function createLayer(id: string, name: string): DrawingLayer {
   return { id, name, visible: true, locked: false, opacity: 1 }
+}
+
+function normalizeDocumentName(name: string | undefined) {
+  const normalized = name?.trim().split('').map((character) => {
+    return character.charCodeAt(0) < 32 || '<>:"/\\|?*'.includes(character) ? ' ' : character
+  }).join('').replace(/\s+/g, ' ')
+  return normalized?.slice(0, 80) || DEFAULT_DOCUMENT_NAME
 }
 
 function getMirroredWorldPoints(point: { x: number; y: number }, mirrorX: boolean, mirrorY: boolean) {
